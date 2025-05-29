@@ -241,6 +241,44 @@ Comprehensive testing, refinement based on user feedback, and preparation for sc
    - Production deployment checklist
    - Create rollback procedures
 
+## Phase 8: Controller Agent
+
+**Duration: 3-4 weeks**
+
+Implement the Controller Agent to serve as the master orchestrator for the multi-agent RAG system.
+
+### Tasks:
+
+1. **Controller Agent Infrastructure**
+   - Set up the core controller state management
+   - Define controller workflow with LangGraph
+   - Create agent routing and coordination mechanisms
+   - Implement request analysis engine
+
+2. **Decision-Making Components**
+   - Build intent classification system
+   - Implement entity extraction and analysis
+   - Create disambiguation handling system
+   - Develop confidence scoring mechanisms
+
+3. **Authentication Coordination**
+   - Implement authentication detection
+   - Create authentication request manager
+   - Build secure credential handling
+   - Develop authentication failure recovery
+
+4. **Inter-Agent Communication**
+   - Build comprehensive agent coordinator
+   - Implement response aggregation system
+   - Create workflow tracking and recovery
+   - Develop error handling mechanisms
+
+5. **UI Integration**
+   - Create controller API endpoints
+   - Build disambiguation UI components
+   - Implement authentication request UI
+   - Develop workflow visualization components
+
 ## Future Enhancements
 
 Features to consider for future development phases:

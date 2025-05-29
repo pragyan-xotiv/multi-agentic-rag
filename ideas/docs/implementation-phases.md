@@ -55,6 +55,14 @@ This document outlines the phased approach to implementing the Multi-Agent RAG s
 - Set up monitoring and observability
 - Finalize production deployment
 
+### Phase 8: Controller Agent
+**Duration: 3-4 weeks**
+- Implement master orchestrator for the system
+- Build decision-making workflows for request routing
+- Create disambiguation handling mechanisms
+- Develop authentication coordination
+- Implement inter-agent communication management
+
 ## Detailed Files
 
 For detailed information on each phase, refer to the individual phase files in the `ideas/phases/` directory:
@@ -66,7 +74,8 @@ For detailed information on each phase, refer to the individual phase files in t
 5. [Phase 5: Scraper Agent](../phases/phase5-scraper-agent.md)
 6. [Phase 6: System Integration & Enhancement](../phases/phase6-system-integration.md)
 7. [Phase 7: Testing, Refinement & Scaling](../phases/phase7-testing-refinement.md)
+8. [Phase 8: Controller Agent](../phases/phase8-controller-agent.md)
 
 ## Total Implementation Timeline
 
-The estimated total implementation time is 17-24 weeks. This timeline assumes a small team of experienced developers working on the project and can be adjusted based on available resources and priorities. 
+The estimated total implementation time is 20-28 weeks. This timeline assumes a small team of experienced developers working on the project and can be adjusted based on available resources and priorities. 
