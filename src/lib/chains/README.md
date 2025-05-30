@@ -183,3 +183,110 @@ export class RetrievalAgent {
     return enhancedResults;
   }
 } 
+```
+
+## Scraper Agent Chains
+
+The following chains are part of the scraper agent subsystem:
+
+### URL Analysis Chain
+Evaluates URLs to determine their relevance to the scraping goal, estimates information value, and assigns priority scores.
+
+### Authentication Detection Chain
+Analyzes web pages to determine if authentication is required and prepares for human-in-the-loop authentication.
+
+### Content Extraction Chain
+Extracts valuable content from web pages, focusing on high-value elements while ignoring navigation, ads, and boilerplate.
+
+### Link Discovery Chain
+Identifies links on a web page, analyzes their context, and assigns priority scores based on expected information value.
+
+### Progress Evaluation Chain
+Assesses the overall progress of the scraping operation, calculating metrics about information density, relevance, uniqueness, and completeness.
+
+### Navigation Decision Chain
+Determines the next action in the scraping process: whether to continue scraping or complete the process.
+
+## Scraper Agent Workflow
+
+The scraper agent chains work together to form a complete web scraping workflow as illustrated below:
+
+```
+┌───────────────────────────────────────────────────────────────────┐
+│                     SCRAPER AGENT WORKFLOW                        │
+└───────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌───────────────┐     ┌────────────────┐     ┌────────────────────┐
+│               │     │                │     │                    │
+│  URL Analysis ├────►│ Authentication ├────►│ Content Extraction │
+│  Chain        │     │ Detection      │     │ Chain              │
+│               │     │ Chain          │     │                    │
+└───────────────┘     └────────┬───────┘     └──────────┬─────────┘
+                               │                        │
+                               ▼                        │
+                      ┌────────────────┐                │
+                      │                │                │
+                      │ Human Auth     │                │
+                      │ (if required)  │                │
+                      │                │                │
+                      └────────┬───────┘                │
+                               │                        │
+                               └────────────────────────┘
+                                        │
+                                        ▼
+┌───────────────┐     ┌────────────────┐     ┌────────────────────┐
+│               │     │                │     │                    │
+│  Navigation   │◄────┤ Progress       │◄────┤ Link Discovery     │
+│  Decision     │     │ Evaluation     │     │ Chain              │
+│  Chain        │     │ Chain          │     │                    │
+│               │     │                │     │                    │
+└───────┬───────┘     └────────────────┘     └────────────────────┘
+        │
+        ▼
+┌───────────────┐
+│ Continue?     │
+│ ┌─────────┐   │
+│ │   Yes   ├───┼────────┐
+│ └─────────┘   │        │
+│ ┌─────────┐   │        │
+│ │   No    ├───┼────────┐
+│ └─────────┘   │        │
+└───────────────┘        │
+                         ▼
+                 ┌───────────────┐
+                 │ Fetch Next    │
+                 │ URL & Restart │
+                 │ Workflow      │
+                 └───────────────┘
+                         │
+                         └─────────────┐
+                                       ▼
+                               ┌───────────────┐
+                               │ Final Output  │
+                               │ Generation    │
+                               │               │
+                               └───────────────┘
+```
+
+## RAG System Chains
+
+The following chains are part of the RAG retrieval and generation subsystem:
+
+### Hybrid Search Chain
+Combines vector, keyword, graph, and entity search methods to provide comprehensive search results.
+
+### Context Enhancement Chain
+Enhances the retrieved context to improve the quality of the generated response.
+
+### Result Ranking Chain
+Ranks search results based on relevance and other quality metrics.
+
+### Search Method Selection Chain
+Selects the most appropriate search method based on the query characteristics.
+
+### Request Analysis Chain
+Analyzes the user request to determine the optimal search and generation strategy.
+
+### Disambiguation Chain
+Handles ambiguous user queries by requesting clarification when needed.
