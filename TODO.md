@@ -115,6 +115,7 @@ This document tracks the development status and priorities for the multi-agent R
 |------|--------|----------|--------------|-------|
 | Inter-Agent Communication | 🚫 | High | All Agents | How agents exchange messages |
 | Memory Integration | 🚫 | High | Memory System, All Agents | How agents use shared memory |
+| Retrieval Agent as LangChain Tool | 📝 | High | Retrieval Agent | Wrap Retrieval Agent for use with CreateReactAgent |
 | Error Handling Framework | 🚫 | Medium | All Agents | Robust error management |
 | Logging System | 🚫 | Medium | All Components | Track system operations |
 | Testing Framework | 🚫 | Medium | All Components | Ensure system reliability |
@@ -148,6 +149,7 @@ Based on dependencies and priorities, these are the next tasks to focus on:
 3. **Implement Knowledge Base Schema** - For entity and relationship storage
 4. **Develop Memory Management System** - Critical for context preservation
 5. **Create Utility Functions** - For text processing and scoring
+6. **Wrap Retrieval Agent as LangChain Tool** - Enable integration with CreateReactAgent for more flexible agent workflows
 
 ## Progress Tracking
 
@@ -159,7 +161,7 @@ Based on dependencies and priorities, these are the next tasks to focus on:
 | Chains - Implementation | 13 | 1 | 1 | 15 |
 | Agents - Documentation | 0 | 0 | 5 | 5 |
 | Agents - Implementation | 4 | 1 | 0 | 5 |
-| Integration | 5 | 0 | 0 | 5 |
+| Integration | 5 | 0 | 1 | 6 |
 | UI & User Features | 5 | 0 | 0 | 5 |
 | Future Enhancements | 5 | 0 | 0 | 5 |
-| **Total** | **38** | **2** | **19** | **59** | 
+| **Total** | **38** | **2** | **20** | **60** | 

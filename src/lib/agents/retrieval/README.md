@@ -9,16 +9,12 @@ The Retrieval Agent is a sophisticated component that enables intelligent, multi
 ```mermaid
 graph TD
     A[User Query] --> B[Analyze Retrieval Request]
-    B --> C[Select Retrieval Methods]
-    C --> D[Execute Retrieval Operations]
-    D --> D1[Vector Search]
-    D --> D2[Keyword Search]
-    D --> D3[Entity Search]
-    D --> D4[Graph Search]
-    D1 --> E[Rank and Filter Results]
-    D2 --> E
-    D3 --> E
-    D4 --> E
+    B --> C[Hybrid Search Chain]
+    C --> D1[Vector Search]
+    C --> D2[Keyword Search]
+    C --> D3[Entity Search]
+    C --> D4[Graph Search]
+    C --> E[Ranked Results]
     E --> F[Evaluate Result Quality]
     F --> G[Format Retrieval Response]
     G --> H[Final Response]
@@ -27,28 +23,26 @@ graph TD
         B
     end
 
-    subgraph "Method Selection"
+    subgraph "Search Execution"
         C
-    end
-
-    subgraph "Multi-Strategy Retrieval"
-        D
         D1
         D2
         D3
         D4
+        E
     end
 
     subgraph "Result Processing"
-        E
         F
         G
     end
 
     classDef process fill:#f9f,stroke:#333,stroke-width:2px;
+    classDef chain fill:#fcf,stroke:#333,stroke-width:2px;
     classDef retrieval fill:#bbf,stroke:#333,stroke-width:2px;
     classDef evaluation fill:#bfb,stroke:#333,stroke-width:2px;
-    class B,C process;
+    class B process;
+    class C chain;
     class D1,D2,D3,D4 retrieval;
     class E,F,G evaluation;
 ```
@@ -81,19 +75,16 @@ graph TD
                                                  │
                                                  ▼
 ┌────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                🧩 METHOD SELECTION 🧩                                          │
+│                             🔄 HYBRID SEARCH CHAIN 🔄                                          │
 │                                                                                                │
 │  ┌────────────────────────────────────────────────────────────────────────────────────┐        │
-│  │                       🔀 Select Retrieval Methods                                   │        │
+│  │                       🧩 Intelligent Search Orchestration                           │        │
 │  │                                                                                    │        │
-│  │  • 🏅 Assign priority to each method                                               │        │
-│  │  • 📝 Choose methods based on query analysis                                       │        │
+│  │  • 🧮 Analyzes query and determines optimal search methods                         │        │
+│  │  • 🏅 Assigns priority to each method                                              │        │
+│  │  • 🔄 Executes search methods in parallel                                          │        │
+│  │  • 🔝 Ranks and combines results                                                   │        │
 │  └────────────────────────────────────────────────────────────────────────────────────┘        │
-└────────────────────────────────────────────────────────────────────────────────────────────────┘
-                                                 │
-                                                 ▼
-┌────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                             🔄 MULTI-STRATEGY RETRIEVAL 🔄                                     │
 │                                                                                                │
 │  ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐  │
 │  │  🧮 Vector Search    │  │  🔤 Keyword Search   │  │  👤 Entity Search    │  │  🕸️ Graph Search     │  │
@@ -101,25 +92,13 @@ graph TD
 │  │  • 🔍 Semantic       │  │  • 📌 Exact match    │  │  • 🏷️ Entity focus   │  │  • 🔗 Relationships  │  │
 │  │  • 📊 Embeddings     │  │  • 📊 Term freq      │  │  • 🧩 Type filter    │  │  • 🌐 Graph paths    │  │
 │  │  • 📏 Similarity     │  │  • 🔠 Tokens         │  │  • 📛 Named entity   │  │  • 🛣️ Path discover  │  │
-│  └──────────┬───────────┘  └──────────┬───────────┘  └──────────┬───────────┘  └──────────┬───────────┘  │
-│             │                         │                         │                         │              │
-└─────────────┼─────────────────────────┼─────────────────────────┼─────────────────────────┼──────────────┘
-              │                         │                         │                         │
-              └─────────────────────────┴─────────────────────────┴─────────────────────────┘
+│  └──────────────────────┘  └──────────────────────┘  └──────────────────────┘  └──────────────────────┘  │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
                                                  │
                                                  ▼
 ┌────────────────────────────────────────────────────────────────────────────────────────────────┐
 │                                📋 RESULT PROCESSING 📋                                         │
 │                                                                                                │
-│  ┌────────────────────────────────────────────────────────────────────────────────────┐        │
-│  │                      🔝 Rank and Filter Results                                     │        │
-│  │                                                                                    │        │
-│  │  • 🔄 Consolidate from multiple sources                                            │        │
-│  │  • 🗑️ Remove duplicates                                                            │        │
-│  │  • 📊 Prioritize by relevance                                                      │        │
-│  └────────────────────────────────────────────────────────────────────────────────────┘        │
-│                                            │                                                   │
-│                                            ▼                                                   │
 │  ┌────────────────────────────────────────────────────────────────────────────────────┐        │
 │  │                     ⭐ Evaluate Result Quality                                      │        │
 │  │                                                                                    │        │
@@ -154,32 +133,75 @@ graph TD
    - The agent receives a query and analyzes it to identify entity types, semantic aspects, structural needs, and complexity
    - This analysis determines which retrieval methods will be most effective
 
-2. **Method Selection** 🧩:
-   - Based on query analysis, the agent selects from multiple retrieval methods:
-     - Vector search (semantic similarity)
-     - Keyword search (exact term matching)
-     - Entity search (finding specific entities)
-     - Graph search (relationship exploration)
-   - Each method is assigned a priority level
+2. **Hybrid Search Chain** 🔄:
+   - The agent uses the standalone Hybrid Search Chain which:
+     - Selects appropriate search methods based on the query analysis
+     - Executes the selected methods (vector, keyword, entity, graph)
+     - Combines and ranks results from all methods
+   - This modular approach allows for better separation of concerns and reusability
 
-3. **Execution Phase** 🔄:
-   - The agent executes the selected retrieval methods in parallel
-   - Each method returns different result types (vector results, keyword results, entity results, graph results)
-
-4. **Processing Phase** 📋:
-   - Results are ranked, filtered, and consolidated
-   - Duplicate information is removed
-   - Sources are tracked and attributed
-
-5. **Evaluation Phase** ⭐:
+3. **Evaluation Phase** ⭐:
    - The quality of results is evaluated for:
      - Relevance: How well the results match the query
      - Coverage: How comprehensively the results answer the query
      - Confidence: How reliable the information is
 
-6. **Response Formatting** 📝:
+4. **Response Formatting** 📝:
    - Final results are organized into a coherent response
    - Results can be returned as a complete package or streamed incrementally
+
+## Integration with Hybrid Search Chain
+
+The Retrieval Agent is built using LangGraph and integrates with the standalone Hybrid Search Chain:
+
+```typescript
+import { RetrievalAgent } from './lib/agents/retrieval';
+import { createHybridSearchChain } from './lib/chains/hybrid-search-chain';
+import { StateGraph } from '@langchain/langgraph';
+
+// Create the hybrid search chain
+const hybridSearchChain = createHybridSearchChain({
+  vectorStore,
+  supabaseClient,
+  knowledgeBase
+});
+
+// Create the retrieval workflow that uses the hybrid search chain
+function createRetrievalWorkflow() {
+  const workflow = new StateGraph()
+    .addNode("analyzeRequest", analyzeRetrievalRequest)
+    .addNode("executeSearch", async (state) => {
+      // Use the hybrid search chain
+      const searchResults = await hybridSearchChain.invoke({
+        query: state.retrievalRequest.query,
+        filters: state.retrievalRequest.filters,
+        analysisOptions: {
+          // Pass analysis data to help with method selection
+          considerEntities: state.requestAnalysis.entityTypes.length > 0
+        }
+      });
+      
+      // Update state with search results
+      return {
+        rawResults: {
+          // Map results by source
+          vectorResults: searchResults.results.filter(r => r.source === 'vector'),
+          keywordResults: searchResults.results.filter(r => r.source === 'keyword'),
+          // ... other result types
+        }
+      };
+    })
+    .addNode("evaluateResults", evaluateResultQuality)
+    .addNode("formatResponse", formatRetrievalResponse);
+  
+  // Define workflow edges
+  workflow.addEdge("analyzeRequest", "executeSearch");
+  workflow.addEdge("executeSearch", "evaluateResults");
+  workflow.addEdge("evaluateResults", "formatResponse");
+  
+  return workflow.compile();
+}
+```
 
 ## Usage
 
@@ -198,72 +220,28 @@ const response = await agent.retrieve("How does our pricing compare to competito
 // Stream results as they're found
 await agent.streamResults(
   "What customer feedback did we receive last quarter?",
-  {}, // Optional filters
-  { streamDelay: 100 }, // Options
+  {},
+  { streamDelay: 100 },
   async (chunk) => {
-    // Handle streamed chunks
+    // Process each chunk as it's retrieved
     console.log(chunk);
   }
 );
 ```
 
-### API Integration Example
+## Implemented Search Methods
 
-This agent can be integrated with API endpoints as shown in the implementation phase:
+The Retrieval Agent currently uses the following search methods through the Hybrid Search Chain:
 
-```typescript
-// app/api/retrieve/route.ts
-import { NextResponse } from "next/server";
-import { RetrievalAgent } from "@/lib/agents/retrieval";
+- ✅ **Vector Search**: Semantic search using embeddings and cosine similarity
+- ✅ **Keyword Search**: Text-based search using Supabase text search capabilities
+- 🚧 **Entity Search**: Search focused on structured entity data (requires Knowledge Base)
+- 🚧 **Graph Search**: Search through relationship networks (requires Knowledge Base)
 
-export const runtime = "edge";
+## Benefits of the Current Architecture
 
-export async function POST(req: Request) {
-  try {
-    const { query, filters, options } = await req.json();
-    
-    // Initialize retrieval agent
-    const agent = new RetrievalAgent();
-    
-    // Use streaming response
-    const encoder = new TextEncoder();
-    const stream = new TransformStream();
-    const writer = stream.writable.getWriter();
-    
-    // Process with agent and stream results
-    agent.streamResults(query, filters, options, async (chunk) => {
-      await writer.write(encoder.encode(JSON.stringify(chunk) + "\n"));
-    });
-    
-    return new Response(stream.readable, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-      },
-    });
-  } catch (error) {
-    console.error("Retrieval error:", error);
-    return NextResponse.json(
-      { error: "Failed to process retrieval request" },
-      { status: 500 }
-    );
-  }
-}
-```
-
-## Response Structure
-
-The agent returns a structured response containing:
-
-```typescript
-interface RetrievalResponse {
-  content: string;           // Formatted answer text
-  results: RetrievedChunk[]; // Individual retrieved chunks
-  evaluation: {
-    relevanceScore: number;  // How relevant the results are (0-1)
-    coverageScore: number;   // How comprehensive the results are (0-1)
-    confidenceScore: number; // How reliable the information is (0-1)
-    feedback: string;        // Qualitative assessment of results
-  };
-}
-``` 
+1. **Separation of Concerns**: The agent focuses on orchestration while the chain handles search execution
+2. **Reusability**: The Hybrid Search Chain can be used by other components
+3. **Maintainability**: Search logic can be updated independently of the agent
+4. **Extensibility**: New search methods can be added to the chain without modifying the agent
+5. **Testability**: Components can be tested independently 

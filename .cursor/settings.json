@@ -1,0 +1,25 @@
+{
+  "rules": [
+    {
+      "name": "Auto Update TODO.md",
+      "description": "Automatically update TODO.md when completing or modifying project components",
+      "triggers": [
+        "file_edit_complete",
+        "new_file_created"
+      ],
+      "condition": {
+        "not_files": ["TODO.md"],
+        "file_patterns": ["src/**/*.ts", "src/**/*.tsx", "supabase/**/*.sql"]
+      },
+      "action": {
+        "type": "check_todo_updates",
+        "description": "Check if TODO.md needs updates based on the changes made",
+        "run_after_completion": true
+      }
+    }
+  ],
+  "projectSettings": {
+    "todoTracking": true,
+    "autoUpdateTodo": true
+  }
+} 
