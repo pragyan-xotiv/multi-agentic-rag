@@ -12,7 +12,11 @@ import {
   Relationship
 } from "./types";
 import { createLLM } from "../../langchain";
-import { searchVectorStore, createVectorStore } from "../../vectorstore";
+import { 
+  searchVectorStore, 
+  createVectorStore, 
+  keywordSearch 
+} from "../../vectorstore";
 import supabaseClient from "../../supabase/client";
 
 /**
@@ -198,14 +202,15 @@ export async function executeRetrievalOperations(state: RetrievalAgentState): Pr
   const entityResults: EntityResult[] = [];
   const graphResults: GraphResult[] = [];
   
+  // Create vector store once for reuse
+  const vectorStore = await createVectorStore(supabaseClient);
+  
   // Process each method
   for (const method of retrievalMethods) {
     switch (method.type) {
       case RetrievalMethodType.VECTOR: {
-        // Execute vector search
+        // Execute vector search using the optimized function from vectorstore/index.ts
         try {
-          const vectorStore = await createVectorStore(supabaseClient);
-          
           // Extract filter if available
           const filter = method.parameters.filter || filters;
           
@@ -220,7 +225,7 @@ export async function executeRetrievalOperations(state: RetrievalAgentState): Pr
           vectorResults.push(...results.map(doc => ({
             content: doc.pageContent,
             metadata: doc.metadata as Record<string, unknown>,
-            score: 0.9 // Placeholder score
+            score: 0.9 // Placeholder score - in the future we could get this from the vector store
           })));
         } catch (error) {
           console.error("Vector search error:", error);
@@ -229,20 +234,22 @@ export async function executeRetrievalOperations(state: RetrievalAgentState): Pr
       }
       
       case RetrievalMethodType.KEYWORD: {
-        // For now, implement a basic keyword search using Supabase text search
+        // Use the dedicated keyword search function from vectorstore/index.ts
         try {
-          const { data, error } = await supabaseClient
-            .from("documents")
-            .select("*")
-            .textSearch("content", query.split(" ").join(" & "))
-            .limit(method.parameters.k as number || 3);
-            
-          if (error) throw error;
+          const filter = method.parameters.filter || filters;
           
-          keywordResults.push(...(data || []).map(item => ({
-            content: item.content,
-            metadata: item.metadata || {},
-            matches: query.split(" ")
+          const results = await keywordSearch(
+            supabaseClient,
+            query,
+            method.parameters.k as number || 3,
+            filter as Record<string, unknown>
+          );
+            
+          // Convert to our KeywordResult format
+          keywordResults.push(...results.map(doc => ({
+            content: doc.pageContent,
+            metadata: doc.metadata as Record<string, unknown>,
+            matches: query.split(" ") // Simple approach - could be enhanced
           })));
         } catch (error) {
           console.error("Keyword search error:", error);
