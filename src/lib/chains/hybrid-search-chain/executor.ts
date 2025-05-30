@@ -51,18 +51,30 @@ export async function executeSearchMethods(input: {
           break;
           
         case 'entity':
-          // Entity search requires knowledge base - skip if not available
           if (config.knowledgeBase) {
-            // Implementation pending knowledge base schema
-            console.log('Entity search not yet implemented - requires knowledge base');
+            results = await config.knowledgeBase.searchEntitiesForDocuments(
+              query,
+              {
+                types: method.parameters.types as string[] || [],
+                limit: method.parameters.k as number || 5,
+                threshold: method.parameters.similarityThreshold as number || 0.7
+              }
+            );
           }
           break;
           
         case 'graph':
-          // Graph search requires knowledge base - skip if not available
           if (config.knowledgeBase) {
-            // Implementation pending knowledge base schema
-            console.log('Graph search not yet implemented - requires knowledge base');
+            results = await config.knowledgeBase.searchGraphForDocuments(
+              query,
+              {
+                entityTypes: method.parameters.entityTypes as string[] || [],
+                relationshipTypes: method.parameters.relationshipTypes as string[] || [],
+                depth: method.parameters.depth as number || 2,
+                maxResults: method.parameters.maxResults as number || 20,
+                threshold: method.parameters.threshold as number || 0.6
+              }
+            );
           }
           break;
       }

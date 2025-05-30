@@ -100,6 +100,7 @@ For each method, explain why it would or wouldn't be effective.
         type: 'graph',
         parameters: { 
           depth: Math.min(3, Math.max(1, Math.floor(graphScore / 3))),
+          maxResults: 20
         },
         priority: graphScore
       });
@@ -132,7 +133,7 @@ For each method, explain why it would or wouldn't be effective.
         type: 'entity',
         parameters: {
           types: methodOptions.entity?.types || [],
-          k: 5
+          k: methodOptions.entity?.k || 5
         },
         priority: 6
       });
@@ -142,7 +143,10 @@ For each method, explain why it would or wouldn't be effective.
       methods.push({
         type: 'graph',
         parameters: {
-          depth: methodOptions.graph?.depth || 2
+          depth: methodOptions.graph?.depth || 2,
+          entityTypes: methodOptions.graph?.entityTypes || [],
+          relationshipTypes: methodOptions.graph?.relationshipTypes || [],
+          maxResults: methodOptions.graph?.maxResults || 20
         },
         priority: 4
       });

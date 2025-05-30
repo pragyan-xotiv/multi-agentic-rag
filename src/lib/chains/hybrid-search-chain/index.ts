@@ -14,7 +14,6 @@ import {
   HybridSearchChainConfig,
   RetrievalMethod,
   HybridSearchResult,
-  KnowledgeBase
 } from "./types";
 
 /**
@@ -58,7 +57,6 @@ export type {
   HybridSearchChainConfig,
   RetrievalMethod,
   HybridSearchResult,
-  KnowledgeBase
 };
 
 // Default export

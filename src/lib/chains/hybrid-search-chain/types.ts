@@ -3,6 +3,7 @@
  */
 import { SupabaseClient } from "@supabase/supabase-js";
 import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
+import { KnowledgeBase as KnowledgeBaseInterface } from "../../knowledge-base/types";
 
 /**
  * Input interface for the Hybrid Search Chain
@@ -27,19 +28,28 @@ export interface HybridSearchInput {
     entity?: {
       enabled?: boolean;
       types?: string[];
+      k?: number;
     };
     graph?: {
       enabled?: boolean;
       depth?: number;
+      entityTypes?: string[];
+      relationshipTypes?: string[];
+      maxResults?: number;
     };
   };
 }
 
 /**
+ * Search method types
+ */
+export type RetrievalMethodType = 'vector' | 'keyword' | 'entity' | 'graph';
+
+/**
  * Retrieval method type and configuration
  */
 export interface RetrievalMethod {
-  type: 'vector' | 'keyword' | 'entity' | 'graph';
+  type: RetrievalMethodType;
   parameters: Record<string, unknown>;
   priority: number;
 }
@@ -90,19 +100,11 @@ export interface KnowledgeRelationship {
 }
 
 /**
- * Interface for knowledge base access (placeholder until implemented)
- */
-export interface KnowledgeBase {
-  searchEntities: (query: string, types?: string[], limit?: number) => Promise<KnowledgeEntity[]>;
-  searchRelationships: (query: string, depth?: number) => Promise<KnowledgeRelationship[]>;
-}
-
-/**
  * Configuration for the Hybrid Search Chain
  */
 export interface HybridSearchChainConfig {
   vectorStore: SupabaseVectorStore;
   supabaseClient: SupabaseClient;
-  knowledgeBase?: KnowledgeBase;
+  knowledgeBase?: KnowledgeBaseInterface;
   defaultLimit?: number;
 } 
