@@ -4,6 +4,8 @@ ALTER TABLE documents ADD COLUMN namespace TEXT DEFAULT 'default';
 -- Create index on namespace for faster filtering
 CREATE INDEX idx_documents_namespace ON documents(namespace);
 
+DROP FUNCTION match_documents;
+
 -- Update match_documents function to support namespace filtering
 CREATE OR REPLACE FUNCTION match_documents(
   query_embedding vector(3072),
