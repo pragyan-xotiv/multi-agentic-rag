@@ -1,0 +1,43 @@
+graph TD
+    %% Node definitions with descriptions
+    start[Entry Point] --> analyzeRequest
+    
+    subgraph "Retrieval Agent Workflow"
+        analyzeRequest[Analyze Request\nAnalyzes the query and determines\noptimal retrieval methods]
+        hybridSearch[Hybrid Search\nExecutes multiple search methods\nin parallel based on analysis]
+        evaluateResults[Evaluate Results\nAssesses quality and relevance\nof retrieved information]
+        formatResponse[Format Response\nStructures the final response\nwith relevant content]
+    end
+    
+    %% Edge definitions with flow direction
+    analyzeRequest --> hybridSearch
+    hybridSearch --> evaluateResults
+    evaluateResults --> formatResponse
+    formatResponse --> end[End]
+    
+    %% Additional information - State flow between nodes
+    classDef processNode fill:#f9f,stroke:#333,stroke-width:2px;
+    classDef dataNode fill:#bbf,stroke:#333,stroke-width:1px;
+    
+    class analyzeRequest,hybridSearch,evaluateResults,formatResponse processNode;
+    class start,end dataNode;
+    
+    %% Node descriptions
+    subgraph "State Flow"
+        retrievalRequest[retrievalRequest\nQuery and filters]
+        requestAnalysis[requestAnalysis\nAnalysis of query]
+        rawResults[rawResults\nRaw search results]
+        processedResults[processedResults\nConsolidated results]
+        resultEvaluation[resultEvaluation\nQuality metrics]
+        response[response\nFinal formatted response]
+    end
+    
+    retrievalRequest -.-> analyzeRequest
+    analyzeRequest -.-> requestAnalysis
+    requestAnalysis -.-> hybridSearch
+    hybridSearch -.-> rawResults
+    rawResults -.-> processedResults
+    processedResults -.-> evaluateResults
+    evaluateResults -.-> resultEvaluation
+    resultEvaluation -.-> formatResponse
+    formatResponse -.-> response 

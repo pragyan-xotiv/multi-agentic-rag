@@ -95,4 +95,16 @@ export interface RetrievalAgentState {
     confidenceScore: number;
     feedback: string;
   };
+}
+
+// Add RetrievalResponse interface if it doesn't already exist in types.ts
+export interface RetrievalResponse {
+  content: string;
+  results: RetrievedChunk[];
+  evaluation: {
+    relevanceScore: number;
+    coverageScore: number;
+    confidenceScore: number;
+    feedback: string;
+  };
 } 

@@ -1,6 +1,6 @@
-import { executeRetrieval, RetrievalResponse } from './workflow';
+import { executeRetrieval } from './workflow';
 import { SupabaseVectorStore } from '@langchain/community/vectorstores/supabase';
-import { RetrievedChunk } from './types';
+import { RetrievedChunk, RetrievalResponse } from './types';
 
 /**
  * Event types for streaming responses
