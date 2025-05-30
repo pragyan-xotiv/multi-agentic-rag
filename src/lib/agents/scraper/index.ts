@@ -1,15 +1,5 @@
 import { executeScraperWorkflow } from './workflow';
-import { ScraperOutput, AuthenticationConfig, HumanAuthRequest, PageContent } from './types';
-
-/**
- * Event types for streaming responses from the scraper
- */
-export type ScraperStreamEvent = 
-  | { type: 'start'; url: string; goal: string }
-  | { type: 'page'; data: PageContent }
-  | { type: 'auth'; request: HumanAuthRequest }
-  | { type: 'end'; output: ScraperOutput }
-  | { type: 'error'; error: string };
+import { ScraperOutput, AuthenticationConfig, HumanAuthRequest, PageContent, ScraperStreamEvent } from './types';
 
 /**
  * Scraper Agent for intelligently extracting content from websites

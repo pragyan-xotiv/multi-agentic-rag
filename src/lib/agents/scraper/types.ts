@@ -119,3 +119,13 @@ export interface ScraperAgentState {
   requiresAuthentication?: boolean;
   authConfig?: AuthenticationConfig;
 } 
+
+/**
+ * Event types for streaming responses from the scraper
+ */
+export type ScraperStreamEvent = 
+  | { type: 'start'; url: string; goal: string }
+  | { type: 'page'; data: PageContent }
+  | { type: 'auth'; request: HumanAuthRequest }
+  | { type: 'end'; output: ScraperOutput }
+  | { type: 'error'; error: string };
