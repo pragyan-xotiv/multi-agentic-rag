@@ -5,6 +5,10 @@ import { createLLM } from "../../langchain";
 import { SearchFilterOptions } from "../../vectorstore";
 import { HybridSearchInput, RetrievalMethod } from "./types";
 
+// Flags to disable graph and entity search by default
+const GRAPH_SEARCH_ENABLED = false;
+const ENTITY_SEARCH_ENABLED = false;
+
 /**
  * Analyzes a search query and selects appropriate search methods
  */
@@ -85,7 +89,8 @@ For each method, explain why it would or wouldn't be effective.
       });
     }
     
-    if (entityScore >= 6 && analysisOptions.considerEntities) {
+    // Only add entity search if ENTITY_SEARCH_ENABLED is true
+    if (entityScore >= 6 && analysisOptions.considerEntities && ENTITY_SEARCH_ENABLED) {
       methods.push({
         type: 'entity',
         parameters: { 
@@ -95,7 +100,8 @@ For each method, explain why it would or wouldn't be effective.
       });
     }
     
-    if (graphScore >= 6 && analysisOptions.considerRelationships) {
+    // Only add graph search if GRAPH_SEARCH_ENABLED is true
+    if (graphScore >= 6 && analysisOptions.considerRelationships && GRAPH_SEARCH_ENABLED) {
       methods.push({
         type: 'graph',
         parameters: { 
@@ -128,7 +134,10 @@ For each method, explain why it would or wouldn't be effective.
       });
     }
     
-    if (methodOptions.entity?.enabled === true) {
+    // Only add entity search if explicitly enabled in methodOptions AND ENTITY_SEARCH_ENABLED is true,
+    // or if ENTITY_SEARCH_ENABLED is false but methodOptions.entity?.enabled is explicitly set to true
+    if ((methodOptions.entity?.enabled === true && ENTITY_SEARCH_ENABLED) || 
+        (!ENTITY_SEARCH_ENABLED && methodOptions.entity?.enabled === true)) {
       methods.push({
         type: 'entity',
         parameters: {
@@ -139,7 +148,10 @@ For each method, explain why it would or wouldn't be effective.
       });
     }
     
-    if (methodOptions.graph?.enabled === true) {
+    // Only add graph search if explicitly enabled in methodOptions AND GRAPH_SEARCH_ENABLED is true,
+    // or if GRAPH_SEARCH_ENABLED is false but methodOptions.graph?.enabled is explicitly set to true
+    if ((methodOptions.graph?.enabled === true && GRAPH_SEARCH_ENABLED) || 
+        (!GRAPH_SEARCH_ENABLED && methodOptions.graph?.enabled === true)) {
       methods.push({
         type: 'graph',
         parameters: {
