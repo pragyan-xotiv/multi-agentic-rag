@@ -202,7 +202,7 @@ export async function searchVectorStore(
     const results = await vectorStore.similaritySearch(
       query, 
       k,
-      Object.keys(filterObj).length > 0 ? { filter: JSON.stringify(filterObj) } : undefined
+      Object.keys(filterObj).length > 0 ? { filter: filterObj } : undefined
     );
     
     return results;

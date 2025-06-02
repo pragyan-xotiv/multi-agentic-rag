@@ -21,6 +21,13 @@ export class ControllerAgent {
     this.scraperAgent = new ScraperAgent();
     this.knowledgeAgent = new KnowledgeProcessingAgent();
     this.supabaseClient = options?.supabaseClient;
+    
+    // Log Supabase client status
+    console.log(`🔌 [ControllerAgent] Supabase client available: ${this.supabaseClient ? 'Yes' : 'No'}`);
+    
+    if (!this.supabaseClient) {
+      console.warn(`⚠️ [ControllerAgent] Vector storage will be disabled due to missing Supabase client`);
+    }
   }
   
   /**
