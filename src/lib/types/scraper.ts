@@ -7,6 +7,8 @@ export interface PageData {
   metrics: {
     relevance: number;
     informationDensity: number;
+    uniqueness?: number;
+    contentQualityAnalysis?: string;
   };
   links?: string[];
 }
@@ -62,6 +64,7 @@ export interface ScraperResultsType {
       informationDensity: number;
       relevance: number;
       uniqueness: number;
+      contentQualityAnalysis?: string;
     };
     links: Array<{
       url: string;
@@ -72,7 +75,8 @@ export interface ScraperResultsType {
     entities?: Array<{
       name: string;
       type: string;
-      mentions: number;
+      mentions?: number;
+      relevance?: number;
     }>;
   }>;
   summary: {
@@ -90,6 +94,7 @@ export interface ScrapingConfig {
   maxPages: number;
   maxDepth: number;
   includeImages: boolean;
+  executeJavaScript?: boolean;
   filters: {
     mustIncludePatterns: string;
     excludePatterns: string;

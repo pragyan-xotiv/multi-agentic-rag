@@ -23,17 +23,38 @@ export async function identifyLinks(
   currentUrl: string,
   state: ScraperAgentState
 ): Promise<LinkInfo[]> {
+  console.log(`🔍 [LinkPrioritizer] Starting link identification for ${currentUrl}`);
+  console.log(`📊 [LinkPrioritizer] HTML length: ${html.length} bytes`);
+  
+  if (!html || html.length === 0) {
+    console.error(`❌ [LinkPrioritizer] Received empty HTML for ${currentUrl}`);
+    return [];
+  }
+  
   // Extract all links from the HTML
+  console.log(`🔗 [LinkPrioritizer] Extracting links...`);
   const links = extractLinks(html, currentUrl);
+  console.log(`📊 [LinkPrioritizer] Extracted ${links.length} raw links`);
   
   // Filter out links that shouldn't be followed
+  console.log(`🧹 [LinkPrioritizer] Filtering links...`);
   const filteredLinks = filterLinks(links, currentUrl, state);
+  console.log(`📊 [LinkPrioritizer] ${filteredLinks.length} links remain after filtering`);
   
   // Analyze link context and assign priority scores
+  console.log(`⚖️ [LinkPrioritizer] Analyzing links and assigning scores...`);
   const analyzedLinks = analyzeLinks(filteredLinks, state);
   
-  // Return the links sorted by predicted value
-  return analyzedLinks.sort((a, b) => b.predictedValue - a.predictedValue);
+  // Sort and log top links
+  const sortedLinks = analyzedLinks.sort((a, b) => b.predictedValue - a.predictedValue);
+  console.log(`✅ [LinkPrioritizer] Link prioritization completed`);
+  console.log(`📋 [LinkPrioritizer] Top 5 links (of ${sortedLinks.length}):`);
+  
+  sortedLinks.slice(0, 5).forEach((link, index) => {
+    console.log(`🔗 [LinkPrioritizer] #${index + 1}: ${link.url} (score: ${link.predictedValue.toFixed(2)}, text: "${link.text}")`);
+  });
+  
+  return sortedLinks;
 }
 
 /**
@@ -42,12 +63,29 @@ export async function identifyLinks(
 function extractLinks(html: string, baseUrl: string): LinkInfo[] {
   const links: LinkInfo[] = [];
   
+  // Add debugging for SPA detection
+  console.log(`🔍 [LinkPrioritizer] Checking for SPA frameworks...`);
+  const hasSpaIndicators = html.includes('data-reactroot') || 
+                           html.includes('ng-app') || 
+                           html.includes('v-app') ||
+                           html.includes('__NEXT_DATA__');
+  
+  if (hasSpaIndicators) {
+    console.log(`⚠️ [LinkPrioritizer] SPA framework detected! Link extraction might be incomplete.`);
+  }
+  
   // Simple regex to extract links and their text
   // In a real implementation, you would use a proper HTML parser
   const linkRegex = /<a\s+(?:[^>]*?\s+)?href=["']([^"']*)["'](?:[^>]*?)>([^<]*)<\/a>/gi;
   
+  console.log(`🔍 [LinkPrioritizer] Running link extraction regex...`);
+  
   let match;
+  let matchCount = 0;
+  let validCount = 0;
+  
   while ((match = linkRegex.exec(html)) !== null) {
+    matchCount++;
     const url = match[1];
     const text = match[2].trim();
     
@@ -59,6 +97,7 @@ function extractLinks(html: string, baseUrl: string): LinkInfo[] {
     try {
       // Resolve relative URLs to absolute URLs
       const absoluteUrl = new URL(url, baseUrl).toString();
+      validCount++;
       
       // Get some surrounding context (words before and after the link)
       // In a real implementation, you would extract proper context using DOM traversal
@@ -75,10 +114,22 @@ function extractLinks(html: string, baseUrl: string): LinkInfo[] {
         context,
         predictedValue: 0  // Will be calculated later
       });
-    } catch {
+    } catch (error) {
       // Skip invalid URLs
-      console.error(`Failed to parse URL: ${url}`);
+      console.error(`❌ [LinkPrioritizer] Failed to parse URL: ${url}`, error);
     }
+  }
+  
+  console.log(`📊 [LinkPrioritizer] Regex found ${matchCount} potential links, ${validCount} valid links extracted`);
+  
+  // Debug link texts
+  if (links.length > 0) {
+    console.log(`🔗 [LinkPrioritizer] Sample link texts:`);
+    links.slice(0, 3).forEach(link => {
+      console.log(`  - "${link.text}" -> ${link.url}`);
+    });
+  } else {
+    console.warn(`⚠️ [LinkPrioritizer] No valid links were extracted!`);
   }
   
   return links;
@@ -92,20 +143,30 @@ function filterLinks(
   currentUrl: string,
   state: ScraperAgentState
 ): LinkInfo[] {
+  console.log(`🧹 [LinkPrioritizer] Filtering ${links.length} links...`);
+  
   const currentUrlObj = new URL(currentUrl);
   const baseHost = currentUrlObj.hostname;
+  console.log(`🔍 [LinkPrioritizer] Base hostname: ${baseHost}`);
   
-  return links.filter(link => {
+  let domainFilteredCount = 0;
+  let fileTypeFilteredCount = 0;
+  let patternFilteredCount = 0;
+  let alreadyVisitedCount = 0;
+  
+  const filtered = links.filter(link => {
     const linkUrl = new URL(link.url);
     
     // Skip links that have already been visited
     if (state.visitedUrls.has(link.url)) {
+      alreadyVisitedCount++;
       return false;
     }
     
     // Skip links to other domains if we're staying within the same domain
     // This would be a configuration option in a real implementation
     if (linkUrl.hostname !== baseHost) {
+      domainFilteredCount++;
       return false;
     }
     
@@ -117,6 +178,7 @@ function filterLinks(
     ];
     
     if (fileExtensions.some(ext => linkUrl.pathname.endsWith(ext))) {
+      fileTypeFilteredCount++;
       return false;
     }
     
@@ -128,11 +190,21 @@ function filterLinks(
     ];
     
     if (skipPatterns.some(pattern => linkUrl.pathname.includes(pattern))) {
+      patternFilteredCount++;
       return false;
     }
     
     return true;
   });
+  
+  console.log(`📊 [LinkPrioritizer] Filtering results:`);
+  console.log(`  - Already visited: ${alreadyVisitedCount}`);
+  console.log(`  - External domains: ${domainFilteredCount}`);
+  console.log(`  - Filtered file types: ${fileTypeFilteredCount}`);
+  console.log(`  - Pattern filtered: ${patternFilteredCount}`);
+  console.log(`  - Remaining links: ${filtered.length}`);
+  
+  return filtered;
 }
 
 /**

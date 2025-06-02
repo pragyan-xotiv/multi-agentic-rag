@@ -59,7 +59,8 @@ export async function decideNextAction(
   state: ScraperAgentState
 ): Promise<NavigationDecision> {
   // Check if we've reached the maximum number of pages
-  if (state.visitedUrls.size >= state.maxPages) {
+  if (state.extractedContent.size >= state.maxPages) {
+    console.log(`🏁 [NavigationDecision] Maximum page limit of ${state.maxPages} reached with ${state.extractedContent.size} extracted pages.`);
     return {
       action: 'complete',
       completionEstimate: state.valueMetrics.completeness,
@@ -79,7 +80,7 @@ export async function decideNextAction(
   // Check if we're finding diminishing returns
   if (
     state.valueMetrics.uniqueness < 0.2 && 
-    state.visitedUrls.size > 10
+    state.extractedContent.size > 10
   ) {
     return {
       action: 'complete',

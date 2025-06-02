@@ -120,6 +120,15 @@ export function ScraperResults({ results }: ScraperResultsProps) {
                           : page.content}
                       </div>
                       
+                      {page.metrics.contentQualityAnalysis && (
+                        <div className="mt-3 border-t pt-3">
+                          <div className="text-sm font-medium mb-1">Content Analysis</div>
+                          <div className="text-xs text-muted-foreground">
+                            {page.metrics.contentQualityAnalysis}
+                          </div>
+                        </div>
+                      )}
+                      
                       {page.links && page.links.length > 0 && (
                         <div className="mt-3">
                           <div className="text-sm font-medium mb-1">Links ({page.links.length})</div>
@@ -151,13 +160,24 @@ export function ScraperResults({ results }: ScraperResultsProps) {
                   .reduce((acc, entity) => {
                     const existing = acc.find(e => e.name === entity.name && e.type === entity.type);
                     if (existing) {
-                      existing.mentions += entity.mentions;
+                      if (entity.mentions) {
+                        existing.mentions = (existing.mentions || 0) + entity.mentions;
+                      } else if (entity.relevance) {
+                        existing.relevance = (existing.relevance || 0) + entity.relevance;
+                      }
                     } else {
-                      acc.push({ ...entity });
+                      acc.push({ 
+                        ...entity, 
+                        mentions: entity.mentions || 1 
+                      });
                     }
                     return acc;
-                  }, [] as Array<{ name: string; type: string; mentions: number }>)
-                  .sort((a, b) => b.mentions - a.mentions)
+                  }, [] as Array<{ name: string; type: string; mentions?: number; relevance?: number }>)
+                  .sort((a, b) => {
+                    if (a.mentions && b.mentions) return b.mentions - a.mentions;
+                    if (a.relevance && b.relevance) return b.relevance - a.relevance;
+                    return (b.mentions || b.relevance || 0) - (a.mentions || a.relevance || 0);
+                  })
                   .map((entity, index) => (
                     <div 
                       key={index} 
@@ -168,7 +188,12 @@ export function ScraperResults({ results }: ScraperResultsProps) {
                         <div className="text-xs text-muted-foreground">Type: {entity.type}</div>
                       </div>
                       <Badge variant="secondary">
-                        {entity.mentions} {entity.mentions === 1 ? 'mention' : 'mentions'}
+                        {entity.mentions 
+                          ? `${entity.mentions} ${entity.mentions === 1 ? 'mention' : 'mentions'}`
+                          : entity.relevance 
+                            ? `Relevance: ${entity.relevance.toFixed(2)}`
+                            : 'No data'
+                        }
                       </Badge>
                     </div>
                   ))}

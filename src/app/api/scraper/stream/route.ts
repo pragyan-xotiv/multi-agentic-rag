@@ -4,13 +4,19 @@ import { ScraperStreamEvent } from '@/lib/agents/scraper/types';
 
 export const runtime = 'nodejs';
 
+// Allow longer timeouts for complex scraping operations
+export const maxDuration = 300; // 5 minutes max duration
+
 export async function POST(request: Request) {
+  console.log('🔍 [Scraper API] Starting scraping request');
   try {
     // Get the request body with scraping configuration
     const body = await request.json();
+    console.log('📝 [Scraper API] Received config:', JSON.stringify(body, null, 2));
     
     // Validate required fields
     if (!body.baseUrl) {
+      console.error('❌ [Scraper API] Missing baseUrl parameter');
       return NextResponse.json(
         { error: 'Missing baseUrl parameter' },
         { status: 400 }
@@ -18,6 +24,7 @@ export async function POST(request: Request) {
     }
     
     if (!body.scrapingGoal) {
+      console.error('❌ [Scraper API] Missing scrapingGoal parameter');
       return NextResponse.json(
         { error: 'Missing scrapingGoal parameter' },
         { status: 400 }
@@ -30,6 +37,7 @@ export async function POST(request: Request) {
     const writer = stream.writable.getWriter();
     
     // Setup scraper agent with options
+    console.log('🤖 [Scraper API] Initializing scraper agent');
     const agent = new ScraperAgent();
     
     // Start the scraping process in the background
@@ -40,19 +48,24 @@ export async function POST(request: Request) {
         maxPages: body.maxPages || 20,
         maxDepth: body.maxDepth || 3,
         includeImages: body.includeImages || false,
+        executeJavaScript: body.executeJavaScript !== false, // Default to true if not specified
         filters: {
           mustIncludePatterns: body.filters?.mustIncludePatterns || [],
           excludePatterns: body.filters?.excludePatterns || []
         }
       },
       async (event: ScraperStreamEvent) => {
+        // Log the event type for debugging
+        console.log(`📊 [Scraper API] Event: ${event.type}`, 
+          event.type === 'error' ? event.error : '');
+        
         // Send each event to the client
         await writer.write(
           encoder.encode(JSON.stringify(event) + '\n')
         );
       }
     ).catch(async (error) => {
-      console.error('Error during scraping:', error);
+      console.error('🔥 [Scraper API] Error during scraping:', error);
       
       // Send error event to the client
       await writer.write(
@@ -65,6 +78,7 @@ export async function POST(request: Request) {
         )
       );
     }).finally(async () => {
+      console.log('✅ [Scraper API] Scraping process completed');
       // Close the stream when done
       await writer.close();
     });
@@ -78,7 +92,7 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
-    console.error('API route error:', error);
+    console.error('💥 [Scraper API] Route error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

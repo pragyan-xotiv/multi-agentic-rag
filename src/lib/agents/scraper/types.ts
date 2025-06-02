@@ -27,6 +27,7 @@ export interface PageContent {
     informationDensity: number;
     relevance: number;
     uniqueness: number;
+    contentQualityAnalysis?: string;
   };
   links: {
     url: string;
@@ -37,7 +38,8 @@ export interface PageContent {
   entities: {
     name: string;
     type: string;
-    mentions: number;
+    relevance?: number;
+    mentions?: number;
   }[];
 }
 
@@ -129,3 +131,14 @@ export type ScraperStreamEvent =
   | { type: 'auth'; request: HumanAuthRequest }
   | { type: 'end'; output: ScraperOutput }
   | { type: 'error'; error: string };
+
+/**
+ * Result from fetching a page
+ */
+export interface PageFetchResult {
+  html: string;
+  status: number;
+  finalUrl: string;
+  headers: Record<string, string>;
+  error?: string;
+}

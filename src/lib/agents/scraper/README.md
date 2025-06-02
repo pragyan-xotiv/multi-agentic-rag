@@ -513,4 +513,83 @@ interface ScrapingResponse {
     coverageScore: number;       // Information coverage score (0-1)
   };
 }
-``` 
+```
+
+## Debugging Common Scraping Issues
+
+### Common Challenges
+
+1. **Single Page Applications (SPAs)** 🔄
+   - Sites built with React, Vue, Angular, or Next.js often load content dynamically via JavaScript
+   - Basic HTTP fetching may only retrieve the initial HTML shell without actual content
+   - Sites like xotiv.com are SPAs that require JavaScript execution to render content
+
+2. **CORS Restrictions** 🛡️
+   - Many sites block cross-origin requests, preventing client-side fetching
+   - This protection affects API calls from browsers but not server-side requests
+   - CORS errors appear in browser console but not in server-side logs
+
+3. **Authentication Requirements** 🔒
+   - Some content is only available after login
+   - Sites may serve limited or placeholder content to unauthenticated users
+   - Authentication flows often require human interaction
+
+4. **Rate Limiting and Bot Detection** 🤖
+   - Sites may block requests that appear automated
+   - Rapid sequential requests can trigger rate limiting
+   - Missing or suspicious user agents can lead to blocks
+
+### Debugging Steps
+
+1. **Use the Debug Tab** 🛠️
+   - The Debug tab in the UI provides tools to test direct URL fetching
+   - This helps identify if the issue is with fetching or parsing
+
+2. **Check Console Logs** 📋
+   - Detailed logs are provided with the prefix `[BrowserInterface]`, `[ScraperAgent]`, etc.
+   - Look for specific errors related to fetching, parsing, or content extraction
+
+3. **For SPA Sites Like xotiv.com** 📱
+   - Our basic fetching implementation cannot execute JavaScript
+   - SPA sites require a full browser environment (Puppeteer/Playwright) to render content
+   - Consider upgrading the `fetchPage` function to use a headless browser for full rendering
+
+4. **Server vs. Client Fetching** 🖥️
+   - The scraper operates server-side, avoiding CORS restrictions
+   - If testing in the browser console, you may see CORS errors that don't affect the actual scraper
+
+### Implementing a Full Browser Solution
+
+For sites like xotiv.com, a more robust solution would involve:
+
+```typescript
+// Example of headless browser implementation (not currently implemented)
+async function fetchPageWithBrowser(url: string, options = {}) {
+  const browser = await puppeteer.launch();
+  const page = await browser.newPage();
+  
+  // Set realistic browser headers
+  await page.setUserAgent('Mozilla/5.0...');
+  
+  // Navigate and wait for content to load
+  await page.goto(url, { waitUntil: 'networkidle2' });
+  
+  // Wait for JS execution to complete
+  await page.waitForTimeout(2000);
+  
+  // Extract the fully rendered HTML
+  const html = await page.content();
+  
+  await browser.close();
+  return html;
+}
+```
+
+### Future Improvements
+
+The current implementation uses a simple fetch approach, which works for most static websites but has limitations with modern web applications. Future improvements will include:
+
+1. Implementing a proper headless browser solution for JavaScript rendering
+2. Adding more sophisticated authentication handling
+3. Improving rate limiting detection and respect
+4. Enhancing the detection of content behind paywalls or login screens 

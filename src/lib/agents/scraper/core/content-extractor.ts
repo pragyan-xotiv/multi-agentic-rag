@@ -26,17 +26,37 @@ export async function extractContent(
   url: string,
   state: ScraperAgentState
 ): Promise<ExtractionResult> {
-  // In a real implementation, you would use a proper HTML parser like Cheerio
-  // For this example, we'll use simplified extraction logic
+  console.log(`🔍 [ContentExtractor] Starting content extraction for ${url}`);
+  console.log(`📊 [ContentExtractor] HTML length: ${html.length} bytes`);
+  
+  if (!html || html.length === 0) {
+    console.error(`❌ [ContentExtractor] Received empty HTML for ${url}`);
+    return {
+      title: 'Empty Page',
+      content: '',
+      contentType: 'text/html',
+      metrics: { informationDensity: 0, relevance: 0, uniqueness: 0 }
+    };
+  }
   
   // Extract title
   const title = extractTitle(html);
+  console.log(`📑 [ContentExtractor] Extracted title: "${title}"`);
   
   // Extract main content, removing boilerplate, navigation, ads, etc.
+  console.log(`🔎 [ContentExtractor] Extracting main content...`);
   const mainContent = extractMainContent(html);
+  console.log(`📏 [ContentExtractor] Extracted content length: ${mainContent.length} bytes`);
+  console.log(`📄 [ContentExtractor] First 100 chars: ${mainContent.substring(0, 100).replace(/\n/g, ' ')}...`);
   
   // Calculate metrics about the extracted content
+  console.log(`📊 [ContentExtractor] Calculating content metrics...`);
   const metrics = calculateContentMetrics(mainContent, state);
+  console.log(`📈 [ContentExtractor] Metrics:`, metrics);
+  
+  // Log extraction result summary
+  console.log(`✅ [ContentExtractor] Content extraction completed for ${url}`);
+  console.log(`📋 [ContentExtractor] Result: title="${title}", contentLength=${mainContent.length}`);
   
   return {
     title,
@@ -52,7 +72,9 @@ export async function extractContent(
 function extractTitle(html: string): string {
   // Simple regex to extract title
   const titleMatch = html.match(/<title>(.*?)<\/title>/i);
-  return titleMatch ? titleMatch[1] : 'Untitled Page';
+  const result = titleMatch ? titleMatch[1] : 'Untitled Page';
+  console.log(`🔍 [ContentExtractor] Title extraction: ${result === 'Untitled Page' ? 'No title found' : `Found "${result}"`}`);
+  return result;
 }
 
 /**
@@ -64,10 +86,14 @@ function extractMainContent(html: string): string {
   // 2. Readability algorithms (like what browsers use for "reader mode")
   // 3. ML-based content extraction
   
+  console.log(`🔍 [ContentExtractor] Processing HTML with regex-based extraction`);
+  
   // Simplified approach for demonstration:
   
   // Remove common non-content elements
   let processedHtml = html;
+  
+  console.log(`🗑️ [ContentExtractor] Removing header, nav, footer elements...`);
   
   // Remove header
   processedHtml = processedHtml.replace(/<header.*?>.*?<\/header>/i, '');
@@ -87,32 +113,43 @@ function extractMainContent(html: string): string {
   // Remove styles - use global flag with multiple passes instead of /s flag
   processedHtml = processedHtml.replace(/<style.*?>.*?<\/style>/gi, '');
   
+  console.log(`🔍 [ContentExtractor] Looking for main content area...`);
+  
   // Try to find main content area
   const mainMatch = processedHtml.match(/<main.*?>(.*?)<\/main>/i);
   if (mainMatch) {
+    console.log(`✅ [ContentExtractor] Found <main> element`);
     return cleanHtml(mainMatch[1]);
   }
+  console.log(`❌ [ContentExtractor] No <main> element found`);
   
   // Try to find article content
   const articleMatch = processedHtml.match(/<article.*?>(.*?)<\/article>/i);
   if (articleMatch) {
+    console.log(`✅ [ContentExtractor] Found <article> element`);
     return cleanHtml(articleMatch[1]);
   }
+  console.log(`❌ [ContentExtractor] No <article> element found`);
   
   // Try to find div with content-related IDs or classes
   const contentDivRegex = /<div.*?(?:id|class)=["'](?:content|main|article)["'].*?>(.*?)<\/div>/i;
   const contentDivMatch = processedHtml.match(contentDivRegex);
   if (contentDivMatch) {
+    console.log(`✅ [ContentExtractor] Found div with content-related ID/class`);
     return cleanHtml(contentDivMatch[1]);
   }
+  console.log(`❌ [ContentExtractor] No content div found`);
   
   // Fallback: just return the body content
   const bodyMatch = processedHtml.match(/<body.*?>(.*?)<\/body>/i);
   if (bodyMatch) {
+    console.log(`⚠️ [ContentExtractor] Using body content as fallback`);
     return cleanHtml(bodyMatch[1]);
   }
+  console.log(`❌ [ContentExtractor] No body element found!`);
   
   // If all fails, return the original HTML with basic cleaning
+  console.log(`⚠️ [ContentExtractor] Using ENTIRE HTML as last resort`);
   return cleanHtml(processedHtml);
 }
 
@@ -137,6 +174,7 @@ function cleanHtml(html: string): string {
     .replace(/\s+/g, ' ')
     .trim();
   
+  console.log(`🧹 [ContentExtractor] Cleaned text length: ${text.length} bytes`);
   return text;
 }
 

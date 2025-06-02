@@ -1,173 +1,151 @@
-/**
- * Browser Interface Module
- * 
- * This module provides an interface for retrieving web pages,
- * handling cookies, executing JavaScript, and interacting with pages.
- * It abstracts away the details of the underlying browser automation
- * technology (Puppeteer/Playwright).
- */
+import puppeteer from 'puppeteer';
+import { PageFetchResult } from '../types';
 
-interface PageResult {
-  html: string;
-  status: number;
-  url: string;
-  cookies: Record<string, string>;
-  headers: Record<string, string>;
+/**
+ * Options for fetching a page
+ */
+interface FetchOptions {
+  headers?: Record<string, string>;
+  executeJavaScript?: boolean;
+  timeout?: number;
 }
 
 /**
- * Fetch a web page with optional cookies
+ * Fetch a page from a URL
  */
-export async function fetchPage(
-  url: string,
-  options: {
-    cookies?: Record<string, string>;
-    headers?: Record<string, string>;
-    timeout?: number;
-    followRedirects?: boolean;
-    executeJavaScript?: boolean;
-  } = {}
-): Promise<PageResult> {
-  // In a real implementation, this would use Puppeteer or Playwright
-  // For this example, we'll use a simple fetch with a mock response
+export async function fetchPage(url: string, options: FetchOptions = {}): Promise<PageFetchResult> {
+  console.log(`🌐 [BrowserInterface] Fetching URL: ${url}`);
+  console.log(`🔧 [BrowserInterface] Options:`, JSON.stringify(options));
   
+  // Set a reasonable timeout (default to 20 seconds)
+  const timeout = options.timeout || 20000;
+  
+  // Use Puppeteer (headless browser) for JavaScript execution
+  if (options.executeJavaScript) {
+    return fetchWithPuppeteer(url, options, timeout);
+  }
+  
+  // Use standard fetch for non-JS content
   try {
-    // Use native fetch for simplicity
-    // In a real implementation, we would use browser automation
-    const response = await fetch(url, {
-      headers: options.headers,
-      redirect: options.followRedirects ? 'follow' : 'manual',
+    const headers = new Headers(options.headers || {});
+    headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+    
+    const response = await fetch(url, { 
+      headers,
+      signal: AbortSignal.timeout(timeout) // Add timeout to the fetch request
     });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
     
     const html = await response.text();
     
     return {
       html,
       status: response.status,
-      url: response.url,
-      cookies: {}, // In a real implementation, we would extract cookies
-      headers: Object.fromEntries(response.headers.entries()),
+      finalUrl: response.url,
+      headers: Object.fromEntries(response.headers.entries())
     };
   } catch (error) {
-    console.error(`Error fetching page ${url}:`, error);
+    console.error(`❌ [BrowserInterface] Error fetching page with standard fetch:`, error);
     
-    // Return a minimal result on error
-    return {
-      html: '',
-      status: 0,
-      url,
-      cookies: {},
-      headers: {},
-    };
+    // If standard fetch fails, try with Puppeteer as fallback
+    console.log(`🔄 [BrowserInterface] Falling back to Puppeteer for: ${url}`);
+    return fetchWithPuppeteer(url, options, timeout);
   }
 }
 
 /**
- * Fill and submit a form on a page
+ * Fetch a page using Puppeteer (headless browser)
  */
-export async function fillForm(
-  url: string,
-  formData: Record<string, string>,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _options: {
-    formSelector?: string;
-    submitButtonSelector?: string;
-    cookies?: Record<string, string>;
-    headers?: Record<string, string>;
-    timeout?: number;
-  } = {}
-): Promise<PageResult> {
-  // In a real implementation, this would:
-  // 1. Launch a browser instance
-  // 2. Navigate to the URL
-  // 3. Fill in the form fields
-  // 4. Submit the form
-  // 5. Wait for navigation
-  // 6. Return the resulting page
+async function fetchWithPuppeteer(url: string, options: FetchOptions = {}, timeout: number): Promise<PageFetchResult> {
+  console.log(`🤖 [BrowserInterface] Using Puppeteer for: ${url}`);
   
-  // For this example, we'll just return a mock response
-  console.log(`Would fill form at ${url} with data:`, formData);
-  
-  return {
-    html: '<html><body><h1>Form Submitted</h1></body></html>',
-    status: 200,
-    url: `${url}?submitted=true`,
-    cookies: {},
-    headers: {},
-  };
-}
-
-/**
- * Execute JavaScript on a page and return the result
- */
-export async function executeScript<T>(
-  url: string,
-  script: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _options: {
-    cookies?: Record<string, string>;
-    headers?: Record<string, string>;
-    timeout?: number;
-  } = {}
-): Promise<T> {
-  // In a real implementation, this would:
-  // 1. Launch a browser instance
-  // 2. Navigate to the URL
-  // 3. Execute the provided script
-  // 4. Return the result
-  
-  // For this example, we'll just return a mock response
-  console.log(`Would execute script on ${url}:`, script);
-  
-  return {} as T;
-}
-
-/**
- * Take a screenshot of a page
- */
-export async function takeScreenshot(
-  url: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _options: {
-    selector?: string;
-    fullPage?: boolean;
-    cookies?: Record<string, string>;
-    headers?: Record<string, string>;
-    timeout?: number;
-  } = {}
-): Promise<Buffer> {
-  // In a real implementation, this would:
-  // 1. Launch a browser instance
-  // 2. Navigate to the URL
-  // 3. Take a screenshot
-  // 4. Return the image buffer
-  
-  // For this example, we'll just return an empty buffer
-  console.log(`Would take screenshot of ${url}`);
-  
-  return Buffer.from([]);
-}
-
-/**
- * Apply cookies from a previous session
- */
-export function createCookieJar(): {
-  getCookies: (domain: string) => Record<string, string>;
-  setCookies: (domain: string, cookies: Record<string, string>) => void;
-  getAllCookies: () => Record<string, Record<string, string>>;
-} {
-  const cookieStore: Record<string, Record<string, string>> = {};
-  
-  return {
-    getCookies: (domain: string) => cookieStore[domain] || {},
+  let browser;
+  try {
+    // Launch a headless browser
+    browser = await puppeteer.launch({ 
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+    console.log(`🌐 [BrowserInterface] Puppeteer browser launched`);
     
-    setCookies: (domain: string, cookies: Record<string, string>) => {
-      cookieStore[domain] = {
-        ...cookieStore[domain],
-        ...cookies,
-      };
-    },
+    // Create a new page
+    const page = await browser.newPage();
     
-    getAllCookies: () => cookieStore,
-  };
+    // Set default user agent
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+    
+    // Set headers if provided
+    if (options.headers) {
+      await page.setExtraHTTPHeaders(options.headers);
+    }
+    
+    // Navigate to the URL with timeout
+    console.log(`⏳ [BrowserInterface] Navigating to ${url} with Puppeteer...`);
+    await page.goto(url, { 
+      waitUntil: 'networkidle2', 
+      timeout: timeout // Apply timeout to the navigation
+    });
+    console.log(`✅ [BrowserInterface] Puppeteer navigation complete`);
+    
+    // Get the status code
+    const response = page.url().includes(url) ? 200 : 301;
+    console.log(`📊 [BrowserInterface] Status: ${response}`);
+    
+    // Get the final URL (after any redirects)
+    const finalUrl = page.url();
+    console.log(`🔄 [BrowserInterface] Final URL: ${finalUrl}`);
+    
+    // Wait for content to be fully loaded
+    await page.waitForSelector('body', { timeout: timeout / 2 });
+    
+    // Get the page content
+    const html = await page.content();
+    console.log(`📏 [BrowserInterface] HTML length (after JS execution): ${html.length} bytes`);
+    
+    // Special debugging for xotiv.com
+    if (url.includes('xotiv.com')) {
+      console.log(`🔎 [BrowserInterface] XOTIV.COM DEBUGGING: Special logging for xotiv.com`);
+      console.log(`🔎 [BrowserInterface] Using Puppeteer with full JavaScript execution`);
+      
+      // Take a screenshot for debugging
+      const screenshot = await page.screenshot();
+      console.log(`🔎 [BrowserInterface] Screenshot taken, size: ${screenshot.length} bytes`);
+      
+      // Get the page title
+      const title = await page.title();
+      console.log(`🔎 [BrowserInterface] Page title: ${title}`);
+      
+      // Check if there's a main content area
+      const hasMainContent = await page.evaluate(() => {
+        return Boolean(document.querySelector('main') || document.querySelector('article') || document.querySelector('.content'));
+      });
+      console.log(`🔎 [BrowserInterface] Main content detected: ${hasMainContent}`);
+    }
+    
+    return {
+      html,
+      status: response,
+      finalUrl,
+      headers: {}
+    };
+  } catch (error) {
+    console.error(`❌ [BrowserInterface] Puppeteer error:`, error);
+    // Return partial content if we can
+    return {
+      html: '<html><body><p>Error fetching page with Puppeteer</p></body></html>',
+      status: 500,
+      finalUrl: url,
+      headers: {},
+      error: String(error)
+    };
+  } finally {
+    // Ensure browser is closed
+    if (browser) {
+      await browser.close();
+      console.log(`🔒 [BrowserInterface] Puppeteer browser closed`);
+    }
+  }
 } 
