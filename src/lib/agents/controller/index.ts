@@ -554,6 +554,9 @@ export class ControllerAgent {
     // Check if storage is requested and supabase client is available
     const storeInVectorDb = request.options?.storeInVectorDb !== false;
     const namespace = request.options?.namespace || 'default';
+
+    console.log(`🎮 [ControllerAgent] Storing knowledge in vector database: ${storeInVectorDb}`);
+    console.log(`🎮 [ControllerAgent] Supabase client available: ${this.supabaseClient ? 'Yes' : 'No'}`);
     
     if (storeInVectorDb && this.supabaseClient) {
       try {
@@ -645,6 +648,7 @@ export class ControllerAgent {
     options?: StorageOptions
   ): Promise<StorageResult> {
     if (!this.supabaseClient) {
+      console.error(`❌ [ControllerAgent] No Supabase client available for storage`);
       return {
         success: false,
         storedItems: 0,
@@ -653,18 +657,26 @@ export class ControllerAgent {
       };
     }
     
+    console.log(`💾 [ControllerAgent] Starting vector database storage with Supabase client`);
+    
     // Initialize vectorstore
+    console.log(`🛠️ [ControllerAgent] Creating vector store...`);
     const vectorStore = await createVectorStore(this.supabaseClient);
+    console.log(`✅ [ControllerAgent] Vector store created successfully`);
     
     // Determine what to store based on options
     const storeEntities = options?.storeEntities !== false;
     const storeRelationships = options?.storeRelationships !== false;
     const storeContentChunks = options?.storeContentChunks !== false;
     
+    console.log(`📊 [ControllerAgent] Storage options: entities=${storeEntities}, relationships=${storeRelationships}, chunks=${storeContentChunks}`);
+    
     // Use provided namespace or create a domain-based one
     const domainMatch = sourceUrl.match(/^https?:\/\/(?:www\.)?([^\/]+)/);
     const domain = domainMatch ? domainMatch[1] : 'unknown-domain';
     const namespace = options?.namespace || `${domain}-${new Date().toISOString().split('T')[0]}`;
+    
+    console.log(`🏷️ [ControllerAgent] Using namespace: ${namespace}`);
     
     // Initialize counts
     let contentChunksStored = 0;
@@ -673,6 +685,8 @@ export class ControllerAgent {
     
     // 1. Store content chunks
     if (storeContentChunks && knowledgeResult.chunks && knowledgeResult.chunks.length > 0) {
+      console.log(`📄 [ControllerAgent] Preparing ${knowledgeResult.chunks.length} content chunks for storage`);
+      
       const chunkTexts: string[] = [];
       const chunkMetadata: Record<string, unknown>[] = [];
       
@@ -691,17 +705,27 @@ export class ControllerAgent {
       });
       
       if (chunkTexts.length > 0) {
-        contentChunksStored = await addDocumentsToVectorStore(
-          vectorStore,
-          chunkTexts,
-          chunkMetadata,
-          `${namespace}-chunks`
-        );
+        console.log(`💾 [ControllerAgent] Storing ${chunkTexts.length} chunks with addDocumentsToVectorStore...`);
+        try {
+          contentChunksStored = await addDocumentsToVectorStore(
+            vectorStore,
+            chunkTexts,
+            chunkMetadata,
+            `${namespace}-chunks`
+          );
+          console.log(`✅ [ControllerAgent] Successfully stored ${contentChunksStored} chunks`);
+        } catch (error) {
+          console.error(`❌ [ControllerAgent] Error storing chunks:`, error);
+        }
       }
+    } else {
+      console.log(`ℹ️ [ControllerAgent] Skipping chunk storage: storeContentChunks=${storeContentChunks}, chunksAvailable=${knowledgeResult.chunks?.length || 0}`);
     }
     
     // 2. Store entities
     if (storeEntities && knowledgeResult.entities.length > 0) {
+      console.log(`🧩 [ControllerAgent] Preparing ${knowledgeResult.entities.length} entities for storage`);
+      
       const entityTexts: string[] = [];
       const entityMetadata: Record<string, unknown>[] = [];
       
@@ -720,17 +744,27 @@ export class ControllerAgent {
       });
       
       if (entityTexts.length > 0) {
-        entitiesStored = await addDocumentsToVectorStore(
-          vectorStore,
-          entityTexts,
-          entityMetadata,
-          `${namespace}-entities`
-        );
+        console.log(`💾 [ControllerAgent] Storing ${entityTexts.length} entities with addDocumentsToVectorStore...`);
+        try {
+          entitiesStored = await addDocumentsToVectorStore(
+            vectorStore,
+            entityTexts,
+            entityMetadata,
+            `${namespace}-entities`
+          );
+          console.log(`✅ [ControllerAgent] Successfully stored ${entitiesStored} entities`);
+        } catch (error) {
+          console.error(`❌ [ControllerAgent] Error storing entities:`, error);
+        }
       }
+    } else {
+      console.log(`ℹ️ [ControllerAgent] Skipping entity storage: storeEntities=${storeEntities}, entitiesAvailable=${knowledgeResult.entities.length}`);
     }
     
     // 3. Store relationships
     if (storeRelationships && knowledgeResult.relationships.length > 0) {
+      console.log(`🔗 [ControllerAgent] Preparing ${knowledgeResult.relationships.length} relationships for storage`);
+      
       const relationshipTexts: string[] = [];
       const relationshipMetadata: Record<string, unknown>[] = [];
       
@@ -750,17 +784,27 @@ export class ControllerAgent {
       });
       
       if (relationshipTexts.length > 0) {
-        relationshipsStored = await addDocumentsToVectorStore(
-          vectorStore,
-          relationshipTexts,
-          relationshipMetadata,
-          `${namespace}-relationships`
-        );
+        console.log(`💾 [ControllerAgent] Storing ${relationshipTexts.length} relationships with addDocumentsToVectorStore...`);
+        try {
+          relationshipsStored = await addDocumentsToVectorStore(
+            vectorStore,
+            relationshipTexts,
+            relationshipMetadata,
+            `${namespace}-relationships`
+          );
+          console.log(`✅ [ControllerAgent] Successfully stored ${relationshipsStored} relationships`);
+        } catch (error) {
+          console.error(`❌ [ControllerAgent] Error storing relationships:`, error);
+        }
       }
+    } else {
+      console.log(`ℹ️ [ControllerAgent] Skipping relationship storage: storeRelationships=${storeRelationships}, relationshipsAvailable=${knowledgeResult.relationships.length}`);
     }
     
     // Calculate total stored items
     const totalStored = contentChunksStored + entitiesStored + relationshipsStored;
+    
+    console.log(`📊 [ControllerAgent] Storage summary: ${totalStored} total items stored (${contentChunksStored} chunks, ${entitiesStored} entities, ${relationshipsStored} relationships)`);
     
     return {
       success: totalStored > 0,

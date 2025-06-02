@@ -76,14 +76,14 @@ async function analyzeContent(state: KnowledgeAgentState): Promise<KnowledgeAgen
     6. Estimated number of entities present
 
     Format your response as a JSON object with these keys:
-    {
-      "contentType": string,
-      "domainSpecific": boolean,
-      "complexity": number,
-      "structuredDataTypes": string[],
-      "mainTopics": string[],
-      "estimatedEntitiesCount": number
-    }
+    {{
+      "contentType": "article",
+      "domainSpecific": true,
+      "complexity": 0.7,
+      "structuredDataTypes": ["tables", "lists"],
+      "mainTopics": ["topic1", "topic2", "topic3"],
+      "estimatedEntitiesCount": 25
+    }}
   `);
   
   try {
@@ -91,6 +91,9 @@ async function analyzeContent(state: KnowledgeAgentState): Promise<KnowledgeAgen
     const analysisChain = analysisPrompt.pipe(llm).pipe(
       new JsonOutputParser<ContentAnalysis>()
     );
+
+    console.log(`🧠 [KnowledgeProcessor] ContentSamples: ${contentSamples}`);
+    console.log(`🧠 [KnowledgeProcessor] ProcessingGoal: ${state.processingGoal}`);
     
     const analysis = await analysisChain.invoke({
       contentSamples,
@@ -199,14 +202,16 @@ async function planProcessingStrategy(state: KnowledgeAgentState): Promise<Knowl
     6. Embedding model recommendation
 
     Format your response as a JSON object with these keys:
-    {
-      "chunkingMethod": "semantic" | "fixed" | "hierarchical" | "dialogue",
-      "chunkSize": number,
-      "overlapSize": number,
-      "entityExtractionApproach": "general" | "domain-specific" | "hybrid",
-      "relationshipDiscoveryMethod": "co-occurrence" | "explicit" | "inference" | "combined",
-      "embeddingModel": string
-    }
+    \`\`\`json
+    {{
+      "chunkingMethod": "semantic",
+      "chunkSize": 1000,
+      "overlapSize": 200,
+      "entityExtractionApproach": "general",
+      "relationshipDiscoveryMethod": "co-occurrence",
+      "embeddingModel": "text-embedding-3-small"
+    }}
+    \`\`\`
   `);
   
   try {
@@ -255,19 +260,173 @@ async function planProcessingStrategy(state: KnowledgeAgentState): Promise<Knowl
 }
 
 /**
+ * Step 3: Extract Entities and Relationships - Processes content to extract structured knowledge
+ */
+async function extractKnowledge(state: KnowledgeAgentState): Promise<KnowledgeAgentState> {
+  console.log(`🔍 [KnowledgeProcessor] Extracting knowledge...`);
+  
+  if (!state.processingStrategy) {
+    console.error(`❌ [KnowledgeProcessor] Missing processing strategy, cannot extract knowledge`);
+    return state;
+  }
+  
+  // Get content to process
+  const contentToProcess = typeof state.rawContent === 'string'
+    ? state.rawContent
+    : state.rawContent.pages.map(page => page.content).join('\n\n');
+  
+  console.log(`📝 [KnowledgeProcessor] Content length to process: ${contentToProcess.length} chars`);
+  
+  // Create prompt for entity extraction
+  const extractionPrompt = PromptTemplate.fromTemplate(`
+    You are an expert knowledge extractor specializing in identifying entities and relationships.
+    Analyze the following content and extract key entities and their relationships.
+
+    CONTENT:
+    {content}
+
+    PROCESSING GOAL:
+    {processingGoal}
+
+    STRATEGY:
+    {strategy}
+
+    Extract the following:
+    1. Entities: Identify important entities (people, organizations, products, concepts, etc.)
+    2. Relationships: Identify relationships between these entities
+    3. Content chunks: Create meaningful content chunks with metadata
+
+    Format your response as a JSON object with these keys:
+    \`\`\`json
+    {{
+      "entities": [
+        {{
+          "id": "entity1",
+          "name": "Example Entity",
+          "type": "organization",
+          "attributes": {{
+            "description": "Brief description",
+            "importance": 0.8
+          }}
+        }}
+      ],
+      "relationships": [
+        {{
+          "source": "entity1",
+          "target": "entity2",
+          "type": "provides",
+          "attributes": {{
+            "confidence": 0.9,
+            "context": "Brief context"
+          }}
+        }}
+      ],
+      "chunks": [
+        {{
+          "id": "chunk1",
+          "content": "Example content",
+          "metadata": {{
+            "source": "url or section",
+            "entities": ["entity1", "entity2"]
+          }}
+        }}
+      ]
+    }}
+    \`\`\`
+  `);
+  
+  try {
+    console.log(`🧠 [KnowledgeProcessor] Starting knowledge extraction with strategy: ${JSON.stringify(state.processingStrategy)}`);
+    
+    // Create and run the chain
+    const extractionChain = extractionPrompt.pipe(llm).pipe(
+      new JsonOutputParser<{
+        entities: Entity[];
+        relationships: Relationship[];
+        chunks: ContentChunk[];
+      }>()
+    );
+    
+    // Log truncated content for debugging
+    const contentPreview = contentToProcess.length > 200 
+      ? contentToProcess.substring(0, 200) + '...' 
+      : contentToProcess;
+    console.log(`📄 [KnowledgeProcessor] Content preview: ${contentPreview}`);
+    
+    const extractionResult = await extractionChain.invoke({
+      content: contentToProcess.substring(0, 10000), // Limit content to prevent token overflow
+      processingGoal: state.processingGoal,
+      strategy: JSON.stringify(state.processingStrategy)
+    });
+    
+    console.log(`✅ [KnowledgeProcessor] Knowledge extraction complete`);
+    console.log(`📊 [KnowledgeProcessor] Extracted ${extractionResult.entities.length} entities, ${extractionResult.relationships.length} relationships, and ${extractionResult.chunks.length} chunks`);
+    
+    // Log sample entities and relationships
+    if (extractionResult.entities.length > 0) {
+      console.log(`📋 [KnowledgeProcessor] Sample entities: ${JSON.stringify(extractionResult.entities.slice(0, 2))}`);
+      console.log(`📋 [KnowledgeProcessor] Entity types: ${[...new Set(extractionResult.entities.map(e => e.type))].join(', ')}`);
+    }
+    
+    if (extractionResult.relationships.length > 0) {
+      console.log(`🔗 [KnowledgeProcessor] Sample relationships: ${JSON.stringify(extractionResult.relationships.slice(0, 2))}`);
+      console.log(`🔗 [KnowledgeProcessor] Relationship types: ${[...new Set(extractionResult.relationships.map(r => r.type))].join(', ')}`);
+    }
+    
+    if (extractionResult.chunks.length > 0) {
+      const sampleChunk = extractionResult.chunks[0];
+      console.log(`📄 [KnowledgeProcessor] Sample chunk ID: ${sampleChunk.id}`);
+      console.log(`📄 [KnowledgeProcessor] Sample chunk length: ${sampleChunk.content.length} chars`);
+      console.log(`📄 [KnowledgeProcessor] Sample chunk metadata: ${JSON.stringify(sampleChunk.metadata)}`);
+    }
+    
+    return {
+      ...state,
+      entities: extractionResult.entities,
+      relationships: extractionResult.relationships,
+      chunks: extractionResult.chunks,
+      processingMetrics: {
+        ...state.processingMetrics,
+        entityCount: extractionResult.entities.length,
+        relationshipCount: extractionResult.relationships.length,
+        processingStage: "knowledgeExtracted",
+        validationScore: 0.8 // Placeholder score
+      }
+    };
+  } catch (error) {
+    console.error(`❌ [KnowledgeProcessor] Error extracting knowledge:`, error);
+    
+    // Return state with no extraction results
+    return {
+      ...state,
+      processingMetrics: {
+        ...state.processingMetrics,
+        processingStage: "extractionFailed"
+      }
+    };
+  }
+}
+
+/**
  * Create the knowledge processing workflow
  */
 export function createKnowledgeWorkflow() {
+  console.log(`🔧 [KnowledgeProcessor] Creating knowledge workflow...`);
+  
   // Create a StateGraph with the annotation-based state structure
   const workflow = new StateGraph(KnowledgeStateAnnotation)
     // Add nodes for each step
     .addNode("analyzeContent", analyzeContent)
-    .addNode("planStrategy", planProcessingStrategy);
+    .addNode("planStrategy", planProcessingStrategy)
+    .addNode("extractKnowledge", extractKnowledge);
   
   // Define the workflow flow
   workflow.addEdge(START, "analyzeContent");
   workflow.addEdge("analyzeContent", "planStrategy");
-  workflow.addEdge("planStrategy", END);
+  workflow.addEdge("planStrategy", "extractKnowledge");
+  workflow.addEdge("extractKnowledge", END);
+  
+  console.log(`✅ [KnowledgeProcessor] Knowledge workflow created with 3 steps`);
   
   // Compile the graph into a runnable
   return workflow.compile();
@@ -281,6 +440,13 @@ export function initializeKnowledgeState(
   processingGoal: string,
   options: Record<string, string | number | boolean | string[]> = {}
 ): KnowledgeAgentState {
+  console.log(`🔄 [KnowledgeProcessor] Initializing state with goal: ${processingGoal}`);
+  console.log(`📊 [KnowledgeProcessor] Content type: ${typeof content === 'string' ? 'string' : 'ScraperOutput'}`);
+  
+  if (typeof content !== 'string') {
+    console.log(`📄 [KnowledgeProcessor] Processing ${content.pages.length} pages from scraper output`);
+  }
+  
   return {
     rawContent: content,
     processingGoal,
@@ -310,6 +476,9 @@ export async function executeKnowledgeWorkflow(
 ): Promise<ProcessingResult> {
   const startTime = Date.now();
   
+  console.log(`🚀 [KnowledgeProcessor] Starting knowledge workflow execution...`);
+  console.log(`🎯 [KnowledgeProcessor] Processing goal: ${processingGoal}`);
+  
   // Initialize the state
   const initialState = initializeKnowledgeState(content, processingGoal, options);
   
@@ -320,6 +489,21 @@ export async function executeKnowledgeWorkflow(
     
     // Calculate execution time
     const executionTime = (Date.now() - startTime) / 1000; // Convert to seconds
+    
+    console.log(`🏁 [KnowledgeProcessor] Workflow execution completed in ${executionTime}s`);
+    console.log(`📊 [KnowledgeProcessor] Final results: ${result.entities.length} entities, ${result.relationships.length} relationships, ${result.chunks.length} chunks`);
+    
+    // Debug: Add detailed entity output
+    if (result.entities.length > 0) {
+      console.log(`📋 [KnowledgeProcessor] All entity IDs: ${result.entities.map(e => e.id).join(', ')}`);
+    }
+    
+    // Debug: Add detailed relationship output
+    if (result.relationships.length > 0) {
+      console.log(`🔗 [KnowledgeProcessor] All relationship source-target pairs: ${
+        result.relationships.map(r => `${r.source}->${r.target}`).join(', ')
+      }`);
+    }
     
     // Format the final result
     return {

@@ -95,14 +95,39 @@ export async function GET(req: NextRequest) {
   // Initialize Supabase client if environment variables are available
   let supabaseClient: SupabaseClient | undefined;
   if (supabaseUrl && supabaseServiceKey) {
-    supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
-    console.log('🔌 [API/Stream] Supabase client initialized');
+    console.log(`🔌 [API/Stream] Initializing Supabase client with URL: ${supabaseUrl.substring(0, 15)}...`);
+    console.log(`🔑 [API/Stream] Service key available: ${supabaseServiceKey ? 'Yes (length: ' + supabaseServiceKey.length + ')' : 'No'}`);
+    
+    try {
+      supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
+      console.log('✅ [API/Stream] Supabase client initialized successfully');
+      
+      // Test connection
+      console.log('🔍 [API/Stream] Testing Supabase connection...');
+      const { error } = await supabaseClient.from('documents').select('count(*)', { count: 'exact', head: true });
+      
+      if (error) {
+        console.error(`❌ [API/Stream] Supabase connection test failed:`, error);
+      } else {
+        console.log(`✅ [API/Stream] Supabase connection test successful`);
+      }
+      
+      // Double check we have a proper client instance
+      console.log(`📊 [API/Stream] Supabase client instance check: ${supabaseClient ? 'Valid' : 'Invalid'}`);
+    } catch (err) {
+      console.error(`❌ [API/Stream] Error initializing Supabase client:`, err);
+      console.warn('⚠️ [API/Stream] Vector storage will be disabled due to client initialization failure');
+      supabaseClient = undefined; // Ensure it's explicitly undefined
+    }
   } else {
-    console.warn('⚠️ [API/Stream] Supabase environment variables not found, vector storage will be disabled');
+    console.warn(`⚠️ [API/Stream] Supabase environment variables not found: URL=${supabaseUrl ? 'defined' : 'undefined'}, Key=${supabaseServiceKey ? 'defined' : 'undefined'}`);
+    console.warn('⚠️ [API/Stream] Vector storage will be disabled');
+    supabaseClient = undefined; // Ensure it's explicitly undefined
   }
   
   // Process request through controller agent with streaming
   console.log(`🎮 [API/Stream] Received ${requestData.requestType} request`);
+  console.log(`🔌 [API/Stream] Supabase client being passed to controller: ${supabaseClient ? 'Yes' : 'No'}`);
   
   // Setup streaming response
   const encoder = new TextEncoder();
