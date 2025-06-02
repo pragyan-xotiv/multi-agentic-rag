@@ -22,6 +22,7 @@ export class ScraperAgent {
     maxDepth?: number;
     includeImages?: boolean;
     executeJavaScript?: boolean;
+    preventDuplicateUrls?: boolean;
     filters?: {
       mustIncludePatterns?: string[];
       excludePatterns?: string[];
@@ -30,7 +31,7 @@ export class ScraperAgent {
   }): Promise<ScraperOutput> {
     console.log(`🔍 [ScraperAgent] Starting scrape operation for ${options.baseUrl}`);
     console.log(`📝 [ScraperAgent] Goal: ${options.scrapingGoal}`);
-    console.log(`⚙️ [ScraperAgent] Config: maxPages=${options.maxPages || 20}, maxDepth=${options.maxDepth || 3}, executeJS=${options.executeJavaScript ? 'Yes' : 'No'}`);
+    console.log(`⚙️ [ScraperAgent] Config: maxPages=${options.maxPages || 20}, maxDepth=${options.maxDepth || 3}, executeJS=${options.executeJavaScript ? 'Yes' : 'No'}, preventDuplicates=${options.preventDuplicateUrls ? 'Yes' : 'No'}`);
     
     try {
       const result = await executeScraperWorkflow({
@@ -40,6 +41,7 @@ export class ScraperAgent {
         maxDepth: options.maxDepth || 3,
         includeImages: options.includeImages || false,
         executeJavaScript: options.executeJavaScript,
+        preventDuplicateUrls: options.preventDuplicateUrls || false,
         filters: options.filters || {},
         authConfig: this.authConfig,
         onAuthRequired: options.onAuthRequired,
@@ -71,6 +73,7 @@ export class ScraperAgent {
       maxDepth?: number;
       includeImages?: boolean;
       executeJavaScript?: boolean;
+      preventDuplicateUrls?: boolean;
       filters?: {
         mustIncludePatterns?: string[];
         excludePatterns?: string[];
@@ -85,6 +88,7 @@ export class ScraperAgent {
       maxDepth: options.maxDepth || 3,
       includeImages: options.includeImages || false,
       executeJavaScript: options.executeJavaScript,
+      preventDuplicateUrls: options.preventDuplicateUrls || false,
       filters: options.filters || {}
     }, null, 2));
     
@@ -108,11 +112,18 @@ export class ScraperAgent {
         maxDepth: options.maxDepth || 3,
         includeImages: options.includeImages || false,
         executeJavaScript: options.executeJavaScript,
+        preventDuplicateUrls: options.preventDuplicateUrls || false,
         filters: options.filters || {},
         authConfig: this.authConfig,
         onPageProcessed: async (pageContent: PageContent) => {
           console.log(`📄 [ScraperAgent] Page processed: ${pageContent.url}`);
           console.log(`📊 [ScraperAgent] Page metrics: relevance=${pageContent.metrics.relevance.toFixed(2)}, density=${pageContent.metrics.informationDensity.toFixed(2)}`);
+          
+          // Skip sending duplicate page events if preventDuplicateUrls is enabled
+          if (options.preventDuplicateUrls && processedPages.has(pageContent.url)) {
+            console.log(`🔄 [ScraperAgent] Skipping duplicate page event for ${pageContent.url}`);
+            return;
+          }
           
           // Add to our local tracking
           processedPages.add(pageContent.url);
@@ -123,42 +134,28 @@ export class ScraperAgent {
             data: pageContent
           });
         },
-        onAuthRequired: async (authRequest: HumanAuthRequest) => {
-          console.log(`🔒 [ScraperAgent] Authentication required for: ${authRequest.url}`);
-          console.log(`🔑 [ScraperAgent] Auth type: ${authRequest.authType}`);
+        onAuthRequired: async (authRequest) => {
+          console.log(`🔒 [ScraperAgent] Authentication required for ${authRequest.url}`);
+          
           await onEvent({
             type: 'auth',
             request: authRequest
           });
           
-          // Wait for authentication to complete (implementation depends on the application)
-          return new Promise<boolean>(resolve => {
-            // In a real implementation, this would be handled by the application
-            // For now, we'll just timeout after 1 minute and assume auth failed
-            console.log(`⏱️ [ScraperAgent] Waiting for authentication (will timeout in 60s)`);
-            setTimeout(() => {
-              console.log(`⌛ [ScraperAgent] Authentication timed out`);
-              resolve(false);
-            }, 60000);
-          });
+          // In streaming mode, we don't handle auth automatically
+          return false;
         },
         config: {
-          recursionLimit: 100, // Increase recursion limit to handle more pages
-          maxIterations: 50    // Add a safety mechanism to limit total iterations
+          recursionLimit: 100,
+          maxIterations: 50
         }
       });
       
-      // Send the final event
+      // Send the end event
       console.log(`🏁 [ScraperAgent] Scraping completed, sending 'end' event`);
       console.log(`📊 [ScraperAgent] Pages scraped: ${result.pages.length}`);
       console.log(`📊 [ScraperAgent] Pages in output: ${result.pages.length}`);
       console.log(`📈 [ScraperAgent] Goal completion: ${result.summary.goalCompletion}`);
-      
-      // Verify the result against our tracking
-      if (result.pages.length === 0 && processedPages.size > 0) {
-        console.warn(`⚠️ [ScraperAgent] Result has 0 pages but ${processedPages.size} pages were processed!`);
-        console.warn(`⚠️ [ScraperAgent] This indicates a data flow problem in the workflow.`);
-      }
       
       await onEvent({
         type: 'end',
@@ -167,11 +164,14 @@ export class ScraperAgent {
       
       return result;
     } catch (error) {
-      console.error('❌ [ScraperAgent] Scraper agent streaming error:', error);
+      console.error('❌ [ScraperAgent] Streaming scraper error:', error);
+      
+      // Send error event
       await onEvent({
         type: 'error',
-        error: `Scraping failed: ${error instanceof Error ? error.message : String(error)}`
+        error: error instanceof Error ? error.message : String(error)
       });
+      
       throw error;
     }
   }

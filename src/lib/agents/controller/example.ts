@@ -5,14 +5,27 @@
  * interactions between specialized agents.
  */
 import { ControllerAgent } from './index';
+import { createClient } from '@supabase/supabase-js';
 
 /**
  * Example of using the Controller Agent directly in code
  */
 async function controllerAgentExample() {
   try {
-    // Create a controller agent instance
-    const controller = new ControllerAgent();
+    // Initialize Supabase client if environment variables are available
+    let supabaseClient;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (supabaseUrl && supabaseServiceKey) {
+      console.log('🔌 Initializing Supabase client for vector storage');
+      supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
+    } else {
+      console.log('⚠️ Supabase environment variables not found, vector storage will be disabled');
+    }
+    
+    // Create a controller agent instance with the Supabase client
+    const controller = new ControllerAgent({ supabaseClient });
     
     // Example 1: Scrape a website
     console.log('\n🔍 Example 1: Simple scraping\n');
@@ -33,8 +46,8 @@ async function controllerAgentExample() {
       console.log(`Pages scraped: ${scrapeResult.result.scraperResult.pages.length}`);
     }
     
-    // Example 2: Scrape and process
-    console.log('\n🧠 Example 2: Scrape and process\n');
+    // Example 2: Scrape and process with vector storage
+    console.log('\n🧠 Example 2: Scrape, process, and store\n');
     
     const scrapeAndProcessResult = await controller.processRequest({
       requestType: 'scrape-and-process',
@@ -46,6 +59,13 @@ async function controllerAgentExample() {
         maxDepth: 2,
         executeJavaScript: true,
         entityTypes: ['Product', 'Feature', 'Price', 'Category']
+      },
+      storageOptions: {
+        storeResults: true,
+        namespace: 'example-blog',
+        storeEntities: true,
+        storeRelationships: true,
+        storeContentChunks: true
       }
     });
     
@@ -56,6 +76,17 @@ async function controllerAgentExample() {
       console.log(`Pages scraped: ${summary.pagesScraped}`);
       console.log(`Entities extracted: ${summary.entitiesExtracted}`);
       console.log(`Relationships discovered: ${summary.relationshipsDiscovered}`);
+      console.log(`Items stored: ${summary.itemsStored}`);
+      
+      // Log storage details if available
+      if (scrapeAndProcessResult.result.storageResult) {
+        const storage = scrapeAndProcessResult.result.storageResult;
+        console.log('\nStorage Results:');
+        console.log(`Namespace: ${storage.namespace}`);
+        console.log(`Content chunks stored: ${storage.contentChunksStored}`);
+        console.log(`Entities stored: ${storage.entitiesStored}`);
+        console.log(`Relationships stored: ${storage.relationshipsStored}`);
+      }
       
       // Log some of the entities
       if (scrapeAndProcessResult.result.knowledgeResult?.entities.length) {

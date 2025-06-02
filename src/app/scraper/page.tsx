@@ -24,6 +24,7 @@ import {
   ScraperResultsType,
 } from "@/lib/types/scraper";
 import { toast } from "sonner";
+import StreamingToggle from "@/app/components/StreamingToggle";
 
 export default function ScraperPage() {
   const [isLoading, setIsLoading] = useState(false);
@@ -43,6 +44,7 @@ export default function ScraperPage() {
   const [results, setResults] = useState<ScraperResultsType | null>(null);
   const [events, setEvents] = useState<ScraperEvent[]>([]);
   const [useJavaScript, setUseJavaScript] = useState(true);
+  const [isStreaming, setIsStreaming] = useState(true);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
@@ -113,76 +115,155 @@ export default function ScraperPage() {
         JSON.stringify(config, null, 2),
       );
 
-      // Make the API call
-      const response = await fetch("/api/scraper/stream", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(config),
-      });
+      // Format data for controller agent
+      const controllerRequest = {
+        requestType: "scrape-and-process",
+        url: config.baseUrl,
+        scrapingGoal: config.scrapingGoal,
+        processingGoal: "Extract key entities, relationships, and structured knowledge from content",
+        stream: isStreaming,
+        options: {
+          maxPages: config.maxPages,
+          maxDepth: config.maxDepth,
+          includeImages: config.includeImages,
+          executeJavaScript: config.executeJavaScript,
+          filters: config.filters,
+          storeInVectorDb: true,
+          namespace: `scrape-${Date.now()}`,
+          preventDuplicateUrls: true
+        }
+      };
 
-      if (!response.ok) {
-        console.error(
-          "❌ [Scraper UI] API response error:",
-          response.status,
-          response.statusText,
-        );
-        throw new Error(`Failed to start scraping: ${response.statusText}`);
-      }
+      console.log("🎮 [Scraper UI] Using Controller Agent with streaming:", isStreaming);
 
-      console.log(
-        "✅ [Scraper UI] API connection established, status:",
-        response.status,
-      );
+      if (isStreaming) {
+        // Streaming API call
+        const response = await fetch("/api/controller", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(controllerRequest),
+        });
 
-      // Handle the streaming response
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error("Response body is null");
-      }
-
-      const decoder = new TextDecoder();
-      console.log("📡 [Scraper UI] Starting to read stream");
-
-      let eventCount = 0;
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          console.log("🏁 [Scraper UI] Stream completed");
-          break;
+        if (!response.ok) {
+          console.error(
+            "❌ [Scraper UI] API response error:",
+            response.status,
+            response.statusText,
+          );
+          throw new Error(`Failed to start scraping: ${response.statusText}`);
         }
 
-        const chunk = decoder.decode(value);
-        console.log(`📦 [Scraper UI] Received chunk: ${chunk.length} bytes`);
+        console.log(
+          "✅ [Scraper UI] API connection established, status:",
+          response.status,
+        );
 
-        const lines = chunk.split("\n").filter((line) => line.trim());
-        console.log(`📜 [Scraper UI] Chunk contains ${lines.length} events`);
+        // Handle the streaming response
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error("Response body is null");
+        }
 
-        for (const line of lines) {
-          try {
-            const event = JSON.parse(line);
-            eventCount++;
-            console.log(
-              `🔄 [Scraper UI] Processing event #${eventCount}:`,
-              event.type,
-            );
+        const decoder = new TextDecoder();
+        console.log("📡 [Scraper UI] Starting to read stream");
 
-            setEvents((prev) => [...prev, event]);
+        let eventCount = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            console.log("🏁 [Scraper UI] Stream completed");
+            break;
+          }
 
-            if (event.type === "end") {
+          const chunk = decoder.decode(value);
+          console.log(`📦 [Scraper UI] Received chunk: ${chunk.length} bytes`);
+
+          const lines = chunk.split("\n").filter((line) => line.trim());
+          console.log(`📜 [Scraper UI] Chunk contains ${lines.length} events`);
+
+          for (const line of lines) {
+            try {
+              // Extract the data part from the SSE format
+              const dataMatch = line.match(/^data: (.+)$/);
+              const eventData = dataMatch ? JSON.parse(dataMatch[1]) : JSON.parse(line);
+              
+              eventCount++;
               console.log(
-                "🏆 [Scraper UI] Received end event with results:",
-                event.output.summary.pagesScraped,
-                "pages scraped",
+                `🔄 [Scraper UI] Processing event #${eventCount}:`,
+                eventData.type,
               );
-              setResults(event.output);
-              setActiveTab("results");
+
+              // Map controller events to scraper events
+              if (eventData.type === "scraping-started") {
+                setEvents(prev => [...prev, {
+                  type: "start",
+                  url: eventData.data?.url || config.baseUrl,
+                  goal: config.scrapingGoal
+                }]);
+              } else if (eventData.type === "scraping-progress") {
+                setEvents(prev => [...prev, {
+                  type: "page",
+                  data: eventData.data
+                }]);
+              } else if (eventData.type === "scraping-complete") {
+                setEvents(prev => [...prev, {
+                  type: "end",
+                  output: eventData.data
+                }]);
+                
+                setResults(eventData.data);
+                setActiveTab("results");
+              } else if (eventData.type === "error") {
+                setEvents(prev => [...prev, {
+                  type: "error",
+                  error: eventData.error || "Unknown error"
+                }]);
+              }
+            } catch (e) {
+              console.error("❌ [Scraper UI] Failed to parse event:", line, e);
             }
-          } catch (e) {
-            console.error("❌ [Scraper UI] Failed to parse event:", line, e);
           }
         }
+      } else {
+        // Non-streaming API call
+        console.log("🚀 [Scraper UI] Using non-streaming controller endpoint");
+        const response = await fetch("/api/controller", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(controllerRequest),
+        });
+
+        if (!response.ok) {
+          console.error(
+            "❌ [Scraper UI] API response error:",
+            response.status,
+            response.statusText,
+          );
+          throw new Error(`Failed to start scraping: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        console.log("✅ [Scraper UI] Received complete results:", result);
+        
+        if (!result.success) {
+          throw new Error(result.error || "Failed to scrape content");
+        }
+        
+        const scraperResult = result.result.scraperResult;
+        
+        // Create a synthetic end event
+        const endEvent: ScraperEvent = {
+          type: "end",
+          output: scraperResult,
+        };
+        
+        setEvents([endEvent]);
+        setResults(scraperResult);
+        setActiveTab("results");
       }
 
       toast.success("Scraping Complete", {
@@ -355,6 +436,13 @@ export default function ScraperPage() {
                       URLs containing these patterns will be skipped
                     </p>
                   </div>
+                </div>
+
+                <div className="mt-4">
+                  <StreamingToggle
+                    initialState={isStreaming}
+                    onToggle={setIsStreaming}
+                  />
                 </div>
               </div>
             </CardContent>

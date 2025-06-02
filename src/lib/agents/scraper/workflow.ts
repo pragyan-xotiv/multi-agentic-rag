@@ -52,16 +52,19 @@ function createPriorityQueue<T>() {
   };
 }
 
-// Extend the ScraperAgentState with properties used in the workflow
+/**
+ * Extended scraper agent state for workflow
+ */
 interface ExtendedScraperAgentState extends ScraperAgentState {
   lastStatusCode?: number;
   maxDepth?: number;
   urlAnalysis?: URLAnalysisOutput;
   lastError?: string;
   authRequest?: HumanAuthRequest | null;
-  includeImages?: boolean;
+  includeImages: boolean;
   executeJavaScript?: boolean;
-  filters?: {
+  preventDuplicateUrls?: boolean;
+  filters: {
     mustIncludePatterns?: string[];
     excludePatterns?: string[];
   };
@@ -153,6 +156,32 @@ async function analyzeURL(state: ExtendedScraperAgentState) {
  */
 async function fetchPageContent(state: ExtendedScraperAgentState) {
   console.log(`Fetching page: ${state.currentUrl}`);
+  
+  // Check if we've already visited this URL and we're preventing duplicates
+  if (state.preventDuplicateUrls && state.visitedUrls.has(state.currentUrl)) {
+    console.log(`⚠️ [Workflow] Duplicate URL detected and skipped: ${state.currentUrl}`);
+    
+    // Get the next URL from the queue
+    if (!state.pageQueue.isEmpty()) {
+      const nextItem = state.pageQueue.dequeue();
+      if (nextItem) {
+        state.currentUrl = nextItem.url;
+        console.log(`⏭️ [Workflow] Moving to next URL: ${state.currentUrl}`);
+        return state;
+      }
+    }
+    
+    // No more URLs to process
+    console.log(`🏁 [Workflow] No more URLs in queue after skipping duplicate`);
+    state.finalOutput = prepareOutput(state);
+    return state;
+  }
+  
+  console.log(`🔎 [Workflow] Fetching content from: ${state.currentUrl}`);
+  
+  // Start with a clean slate for each URL
+  state.currentPageDOM = "";
+  state.currentPageText = "";
   
   try {
     const fetchResult = await fetchPage(state.currentUrl, {
@@ -689,6 +718,7 @@ export async function executeScraperWorkflow(options: {
   maxDepth: number;
   includeImages: boolean;
   executeJavaScript?: boolean;
+  preventDuplicateUrls?: boolean;
   filters: {
     mustIncludePatterns?: string[];
     excludePatterns?: string[];
@@ -725,6 +755,7 @@ export async function executeScraperWorkflow(options: {
     maxDepth: options.maxDepth,
     includeImages: options.includeImages,
     executeJavaScript: options.executeJavaScript,
+    preventDuplicateUrls: options.preventDuplicateUrls || false,
     filters: options.filters,
     
     currentUrl: options.baseUrl,
