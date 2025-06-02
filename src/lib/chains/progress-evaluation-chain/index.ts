@@ -178,7 +178,7 @@ function prepareContentSummary(contentArray: PageContent[]): string {
     page.entities.forEach(entity => {
       if (entity.type !== 'general') {
         const key = `${entity.name} (${entity.type})`;
-        entities.set(key, (entities.get(key) || 0) + entity.mentions);
+        entities.set(key, (entities.get(key) || 0) + (entity.mentions || 0));
       }
     });
   });
