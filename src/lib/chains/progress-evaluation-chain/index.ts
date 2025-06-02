@@ -172,7 +172,7 @@ function prepareContentSummary(contentArray: PageContent[]): string {
     summary += ` and ${contentArray.length - 5} more`;
   }
   
-  // Add information about top entities if available
+  // Add information about top entities if available.
   const entities = new Map<string, number>();
   contentArray.forEach(page => {
     page.entities.forEach(entity => {
