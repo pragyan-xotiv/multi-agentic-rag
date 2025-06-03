@@ -193,32 +193,188 @@ export default function ScraperPage() {
               console.log(
                 `🔄 [Scraper UI] Processing event #${eventCount}:`,
                 eventData.type,
+                eventData.friendly_title ? `(${eventData.friendly_title})` : ''
               );
 
-              // Map controller events to scraper events
-              if (eventData.type === "scraping-started") {
+              // Map controller events to scraper events with enhanced UI information
+              if (eventData.type === "start") {
                 setEvents(prev => [...prev, {
                   type: "start",
                   url: eventData.data?.url || config.baseUrl,
-                  goal: config.scrapingGoal
+                  goal: config.scrapingGoal,
+                  friendly_title: eventData.friendly_title,
+                  friendly_message: eventData.friendly_message
+                }]);
+              } else if (eventData.type === "scraping-started") {
+                setEvents(prev => [...prev, {
+                  type: "start",
+                  url: eventData.data?.url || config.baseUrl,
+                  goal: config.scrapingGoal,
+                  friendly_title: eventData.friendly_title,
+                  friendly_message: eventData.friendly_message
                 }]);
               } else if (eventData.type === "scraping-progress") {
+                // Extract URL from the friendly title if available
+                let url = config.baseUrl;
+                if (eventData.friendly_title && eventData.friendly_title.includes(':')) {
+                  url = eventData.friendly_title.split(':')[1].trim();
+                }
+                
+                // Create a more informative page event
                 setEvents(prev => [...prev, {
                   type: "page",
-                  data: eventData.data
+                  data: {
+                    url: eventData.data?.url || url,
+                    title: eventData.friendly_title || 'Processing page',
+                    metrics: {
+                      relevance: eventData.data?.metrics?.relevance || 0,
+                      informationDensity: eventData.data?.metrics?.informationDensity || 0,
+                    },
+                    status: eventData.friendly_message,
+                    progress: eventData.progress ? Math.round(eventData.progress * 100) : null
+                  }
                 }]);
               } else if (eventData.type === "scraping-complete") {
                 setEvents(prev => [...prev, {
                   type: "end",
-                  output: eventData.data
+                  output: eventData.data,
+                  friendly_title: eventData.friendly_title,
+                  friendly_message: eventData.friendly_message,
+                  timing: eventData.data?.timing
                 }]);
                 
                 setResults(eventData.data);
                 setActiveTab("results");
+              } else if (eventData.type === "processing-started" || eventData.type === "processing-progress") {
+                // Add processing events as a special type of page event
+                setEvents(prev => [...prev, {
+                  type: "processing",
+                  data: {
+                    title: eventData.friendly_title || 'Processing content',
+                    status: eventData.friendly_message || 'Analyzing and extracting knowledge',
+                    progress: eventData.progress ? Math.round(eventData.progress * 100) : null
+                  }
+                }]);
+              } else if (eventData.type === "processing-complete") {
+                setEvents(prev => [...prev, {
+                  type: "processing-complete",
+                  data: {
+                    title: eventData.friendly_title || 'Processing complete',
+                    details: eventData.friendly_message || 'Knowledge extraction finished',
+                    entities: eventData.data?.entities?.length || 0,
+                    relationships: eventData.data?.relationships?.length || 0
+                  }
+                }]);
               } else if (eventData.type === "error") {
                 setEvents(prev => [...prev, {
                   type: "error",
-                  error: eventData.error || "Unknown error"
+                  error: eventData.error || "Unknown error",
+                  friendly_title: eventData.friendly_title,
+                  friendly_message: eventData.friendly_message
+                }]);
+              } else if (eventData.type === "warning") {
+                // Handle warnings (non-fatal errors that allow the process to continue)
+                setEvents(prev => [...prev, {
+                  type: "warning",
+                  message: eventData.error || eventData.message || "Warning",
+                  friendly_title: eventData.friendly_title || "Warning",
+                  friendly_message: eventData.friendly_message || "The operation encountered an issue but will continue."
+                }]);
+                
+                // Show toast notification for warnings
+                toast.warning(eventData.friendly_title || "Warning", {
+                  description: eventData.friendly_message || "The operation encountered an issue but will continue."
+                });
+              } else if (eventData.type === "analyze-url") {
+                // URL analysis events
+                setEvents(prev => [...prev, {
+                  type: "processing",
+                  data: {
+                    title: `Analyzing URL`,
+                    status: `Evaluating ${eventData.url} (depth: ${eventData.depth})`,
+                    progress: 10
+                  }
+                }]);
+              } else if (eventData.type === "fetch-start") {
+                // Fetch start events
+                setEvents(prev => [...prev, {
+                  type: "processing",
+                  data: {
+                    title: `Fetching page`,
+                    status: `Loading ${eventData.url} (JavaScript: ${eventData.useJavaScript ? 'enabled' : 'disabled'})`,
+                    progress: 20
+                  }
+                }]);
+              } else if (eventData.type === "fetch-complete") {
+                // Fetch complete events
+                setEvents(prev => [...prev, {
+                  type: "processing",
+                  data: {
+                    title: `Page loaded`,
+                    status: `Loaded ${eventData.url} (status: ${eventData.statusCode}, size: ${(eventData.contentLength / 1024).toFixed(1)} KB)`,
+                    progress: 30
+                  }
+                }]);
+              } else if (eventData.type === "extract-content") {
+                // Content extraction events
+                setEvents(prev => [...prev, {
+                  type: "processing",
+                  data: {
+                    title: `Extracting content`,
+                    status: `Processing ${eventData.url} (type: ${eventData.contentType})`,
+                    progress: 40
+                  }
+                }]);
+              } else if (eventData.type === "discover-links") {
+                // Link discovery events
+                setEvents(prev => [...prev, {
+                  type: "processing",
+                  data: {
+                    title: `Discovering links`,
+                    status: `Found ${eventData.linkCount} links on ${eventData.url}`,
+                    progress: 50
+                  }
+                }]);
+              } else if (eventData.type === "evaluate-progress") {
+                // Progress evaluation events
+                setEvents(prev => [...prev, {
+                  type: "processing",
+                  data: {
+                    title: `Evaluating progress`,
+                    status: `Scraped ${eventData.pagesScraped} pages, ${eventData.queueSize} in queue (${Math.round(eventData.goalCompletion * 100)}% complete)`,
+                    progress: 60
+                  }
+                }]);
+              } else if (eventData.type === "decide-next-action") {
+                // Decision events
+                setEvents(prev => [...prev, {
+                  type: "processing",
+                  data: {
+                    title: `Planning next steps`,
+                    status: `Decision: ${eventData.decision} - ${eventData.reason}`,
+                    progress: 70
+                  }
+                }]);
+              } else if (eventData.type === "workflow-status") {
+                // General workflow status events
+                setEvents(prev => [...prev, {
+                  type: "processing",
+                  data: {
+                    title: `Workflow step: ${eventData.step}`,
+                    status: eventData.message,
+                    progress: Math.round(eventData.progress * 100)
+                  }
+                }]);
+              } else if (eventData.type === "heartbeat") {
+                // We don't need to add heartbeat events to the UI
+                console.log(`💓 [Scraper UI] Heartbeat received: ${eventData.elapsed_ms}ms elapsed`);
+              } else if (eventData.type === "complete") {
+                // Final completion message
+                setEvents(prev => [...prev, {
+                  type: "complete",
+                  friendly_title: eventData.friendly_title || 'Operation complete',
+                  friendly_message: eventData.friendly_message || 'Processing completed successfully',
+                  timing: eventData.data?.timing
                 }]);
               }
             } catch (e) {

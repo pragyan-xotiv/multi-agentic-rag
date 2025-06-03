@@ -1,18 +1,15 @@
-import { StateGraph, Annotation, START, END } from "@langchain/langgraph";
-import { ScraperAgentState, ScraperOutput, HumanAuthRequest, PageContent, PriorityQueue, AuthenticationConfig } from "./types";
-import { URLAnalysisOutput } from "../../chains/url-analysis-chain";
+import type { ScraperAgentState, ScraperOutput, PageContent, ScraperStreamEvent, HumanAuthRequest, AuthenticationConfig } from './types';
 import { JSDOM } from 'jsdom';
-
-// Import functionality from the chain modules
-import { runURLAnalysisChain } from "../../chains/url-analysis-chain";
-import { runAuthenticationDetectionChain } from "../../chains/authentication-detection-chain";
-import { runContentExtractionChain } from "../../chains/content-extraction-chain";
-import { runLinkDiscoveryChain } from "../../chains/link-discovery-chain";
-import { runProgressEvaluationChain } from "../../chains/progress-evaluation-chain";
-import { runNavigationDecisionChain } from "../../chains/navigation-decision-chain";
-
-// Import core modules
-import { fetchPage } from "./core/browser-interface";
+import { URLAnalysisOutput } from '@/lib/chains/url-analysis-chain';
+import { runURLAnalysisChain } from '@/lib/chains/url-analysis-chain';
+import { runContentExtractionChain } from '@/lib/chains/content-extraction-chain';
+import { runLinkDiscoveryChain } from '@/lib/chains/link-discovery-chain';
+import { runProgressEvaluationChain } from '@/lib/chains/progress-evaluation-chain';
+import { runNavigationDecisionChain } from '@/lib/chains/navigation-decision-chain';
+import { runAuthenticationDetectionChain } from '@/lib/chains/authentication-detection-chain';
+import { fetchPage } from './core/browser-interface';
+import { StateGraph, END, START } from '@langchain/langgraph';
+import { ScraperStateAnnotation } from './state';
 
 /**
  * Extended scraper agent state for workflow
@@ -31,6 +28,7 @@ interface ExtendedScraperAgentState extends ScraperAgentState {
     excludePatterns?: string[];
   };
   onPageProcessed?: (pageContent: PageContent) => Promise<void>;
+  onEvent?: (event: ScraperStreamEvent) => Promise<void>;
   normalizedUrls?: Set<string>;
   contentSignatures?: Set<string>;
   authAttempts?: Map<string, number>;
@@ -163,239 +161,143 @@ function createPriorityQueue<T>() {
 }
 
 /**
- * Define the scraper workflow state using Annotation
- */
-const ScraperStateAnnotation = Annotation.Root({
-  // Configuration
-  baseUrl: Annotation<string>(),
-  scrapingGoal: Annotation<string>(),
-  maxPages: Annotation<number>(),
-  maxDepth: Annotation<number>(),
-  includeImages: Annotation<boolean>(),
-  executeJavaScript: Annotation<boolean>(),
-  filters: Annotation<{
-    mustIncludePatterns?: string[];
-    excludePatterns?: string[];
-  }>(),
-  
-  // Current state
-  currentUrl: Annotation<string>(),
-  visitedUrls: Annotation<Set<string>>(),
-  pageQueue: Annotation<PriorityQueue<{
-    url: string;
-    expectedValue: number;
-    depth: number;
-  }>>(),
-  
-  // Page data
-  currentPageDOM: Annotation<string>(),
-  currentPageText: Annotation<string>(),
-  extractedContent: Annotation<Map<string, PageContent>>(),
-  
-  // Value metrics
-  valueMetrics: Annotation<{
-    informationDensity: number;
-    relevance: number;
-    uniqueness: number;
-    completeness: number;
-  }>(),
-  
-  // Authentication
-  requiresAuthentication: Annotation<boolean>(),
-  authRequest: Annotation<HumanAuthRequest | null>(),
-  
-  // Final output
-  finalOutput: Annotation<ScraperOutput>()
-});
-
-/**
- * Analyze URL to determine if it should be scraped
+ * Analyze the current URL
  */
 async function analyzeURL(state: ExtendedScraperAgentState) {
-  // Increment node visit counter for debugging
   incrementNodeVisit(state, 'analyzeURL');
-  console.log(`🧠 [AnalyzeURL] Analyzing URL: ${state.currentUrl}`);
-  
-  // Skip analysis if we don't have a current URL
-  if (!state.currentUrl) {
-    console.log(`⚠️ [AnalyzeURL] No current URL to analyze, getting next from queue`);
-    
-    // Get the next URL from the queue
-    const nextUrl = state.pageQueue.dequeue();
-    if (nextUrl) {
-      console.log(`✅ [AnalyzeURL] Got next URL from queue: ${nextUrl}`);
-      return { ...state, currentUrl: nextUrl };
-    } else {
-      console.log(`❌ [AnalyzeURL] Queue is empty, no more URLs to process`);
-      return { ...state, currentUrl: null };
-    }
-  }
-  
-  // Check if this URL appears to be in a redirect loop
-  const urlCount = state.visitedUrls ? Array.from(state.visitedUrls).filter(u => u === state.currentUrl).length : 0;
-  if (urlCount >= 2) {
-    console.log(`⚠️ [AnalyzeURL] Possible redirect loop detected for ${state.currentUrl} (visited ${urlCount} times)`);
-    
-    // Get the next URL from the queue instead
-    const nextUrl = state.pageQueue.dequeue();
-    if (nextUrl) {
-      console.log(`✅ [AnalyzeURL] Skipping potential loop and using next URL from queue: ${nextUrl}`);
-      return { ...state, currentUrl: nextUrl };
-    } else {
-      console.log(`❌ [AnalyzeURL] Queue is empty, no more URLs to process`);
-      return { ...state, currentUrl: null };
-    }
-  }
-  
-  const startTime = Date.now();
-  console.log(`🔍 [AnalyzeURL] Starting analysis for URL: ${state.currentUrl}`);
+  takeStateSnapshot(state);
   
   try {
+    console.log(`🔍 [Workflow] Analyzing URL: ${state.currentUrl}`);
+    
+    // Get the current depth from the queue
+    const currentQueueItem = Array.from(state.pageQueue.items).find(item => item.url === state.currentUrl);
+    const currentDepth = currentQueueItem?.depth || 0;
+    
+    // Send event about starting URL analysis
+    if (state.onEvent) {
+      await state.onEvent({
+        type: 'analyze-url',
+        url: state.currentUrl,
+        depth: currentDepth
+      });
+    }
+    
+    // Run the URL analysis chain
     const analysis = await runURLAnalysisChain({
       url: state.currentUrl,
       scrapingGoal: state.scrapingGoal,
       currentState: state
     });
     
-    const endTime = Date.now();
-    console.log(`✅ [AnalyzeURL] Analysis completed in ${endTime - startTime}ms`);
-    console.log(`📊 [AnalyzeURL] Results: relevance=${analysis.relevanceScore.toFixed(2)}, expected value=${analysis.expectedValue.toFixed(2)}`);
+    console.log(`✅ [Workflow] URL analysis complete for ${state.currentUrl}`);
+    console.log(`📋 [Workflow] Analysis: relevance=${analysis.relevanceScore.toFixed(2)}, expectedValue=${analysis.expectedValue.toFixed(2)}`);
     
-    return {
-      ...state,
-      urlAnalysis: analysis
-    };
+    // Store the analysis in state
+    state.urlAnalysis = analysis;
+    
+    // Send event about workflow status
+    if (state.onEvent) {
+      await state.onEvent({
+        type: 'workflow-status',
+        step: 'analyze-url',
+        progress: 0.1,
+        message: `Analyzed URL ${state.currentUrl} with relevance score ${analysis.relevanceScore.toFixed(2)}`
+      });
+    }
+    
+    return state;
   } catch (error) {
-    console.error("❌ [AnalyzeURL] Error analyzing URL:", error);
-    // If analysis fails, mark the URL as low value
-    return {
-      ...state,
-      urlAnalysis: {
-        url: state.currentUrl,
-        relevanceScore: 0.1,
-        expectedValue: 0.1,
-        isAllowedByRobots: true,
-        domainAuthority: 0,
-        wasVisitedBefore: state.visitedUrls.has(state.currentUrl)
-      }
-    };
+    console.error(`❌ [Workflow] Error analyzing URL ${state.currentUrl}:`, error);
+    state.lastError = `URL analysis error: ${error instanceof Error ? error.message : String(error)}`;
+    
+    if (state.onEvent) {
+      await state.onEvent({
+        type: 'error',
+        error: state.lastError
+      });
+    }
+    
+    return state;
   }
 }
 
 /**
- * Fetch Page Node - Fetches the page content
+ * Fetch the page content for the current URL
  */
 async function fetchPageContent(state: ExtendedScraperAgentState) {
-  // Increment node visit counter for debugging
-  incrementNodeVisit(state, 'fetchPage');
-  const startTime = Date.now();
-  console.log(`📥 [FetchPage] Starting fetch for URL: ${state.currentUrl}`);
+  incrementNodeVisit(state, 'fetchPageContent');
+  takeStateSnapshot(state);
   
-  // Initialize URL and content tracking sets if they don't exist
-  if (!state.normalizedUrls) {
-    state.normalizedUrls = new Set<string>();
-  }
-  if (!state.contentSignatures) {
-    state.contentSignatures = new Set<string>();
-  }
-  
-  // Normalize the current URL
-  const normalizedUrl = normalizeUrl(state.currentUrl);
-  console.log(`🔄 [FetchPage] Normalized URL: ${normalizedUrl}`);
-  
-  // Check if we've already visited this normalized URL and we're preventing duplicates
-  if (state.preventDuplicateUrls && state.normalizedUrls.has(normalizedUrl)) {
-    const dedupeTime = Date.now();
-    console.log(`⚠️ [FetchPage] Duplicate URL detected and skipped: ${state.currentUrl} (normalized: ${normalizedUrl})`);
-    console.log(`⏱️ [FetchPage] Duplicate detection took ${dedupeTime - startTime}ms`);
-    
-    // Get the next URL from the queue
-    if (!state.pageQueue.isEmpty()) {
-      const nextItem = state.pageQueue.dequeue();
-      if (nextItem) {
-        state.currentUrl = nextItem.url;
-        console.log(`⏭️ [FetchPage] Moving to next URL: ${state.currentUrl}`);
-        return state;
-      }
-    }
-    
-    // No more URLs to process
-    console.log(`🏁 [FetchPage] No more URLs in queue after skipping duplicate`);
-    state.finalOutput = prepareOutput(state);
+  // Skip if we don't have a current URL
+  if (!state.currentUrl) {
+    console.log(`⚠️ [Workflow] No current URL to fetch`);
     return state;
   }
   
-  console.log(`🔎 [FetchPage] Fetching content from: ${state.currentUrl}`);
+  console.log(`🌐 [Workflow] Fetching page: ${state.currentUrl}`);
   
-  // Start with a clean slate for each URL
-  state.currentPageDOM = "";
-  state.currentPageText = "";
+  // Send event about starting page fetch
+  if (state.onEvent) {
+    await state.onEvent({
+      type: 'fetch-start',
+      url: state.currentUrl,
+      useJavaScript: state.executeJavaScript || false
+    });
+  }
   
   try {
-    const fetchStartTime = Date.now();
-    console.log(`⏱️ [FetchPage] Browser fetch starting at ${fetchStartTime - startTime}ms`);
-    
+    // Fetch the page content - remove the includeImages parameter
     const fetchResult = await fetchPage(state.currentUrl, {
       executeJavaScript: state.executeJavaScript
     });
     
-    const fetchEndTime = Date.now();
-    console.log(`⏱️ [FetchPage] Browser fetch completed in ${fetchEndTime - fetchStartTime}ms`);
-    console.log(`📊 [FetchPage] Status: ${fetchResult.status}, HTML size: ${fetchResult.html.length} bytes`);
+    // Store the result in state
+    state.currentPageDOM = fetchResult.html;
+    state.lastStatusCode = fetchResult.status;
     
-    // Add the normalized URL to our tracking set
-    state.normalizedUrls.add(normalizedUrl);
+    // Get the text content using JSDOM
+    const dom = new JSDOM(fetchResult.html);
+    state.currentPageText = dom.window.document.body?.textContent || '';
     
-    // Check for content similarity to detect duplicate content with different URLs
-    if (state.preventDuplicateUrls && fetchResult.html) {
-      const sigStartTime = Date.now();
-      const contentSignature = getContentSignature(fetchResult.html);
+    console.log(`✅ [Workflow] Page fetched: ${state.currentUrl} (status: ${fetchResult.status})`);
+    console.log(`📊 [Workflow] Page size: ${fetchResult.html.length} bytes`);
+    
+    // Add to visited URLs
+    state.visitedUrls.add(state.currentUrl);
+    
+    // Send event about completed page fetch
+    if (state.onEvent) {
+      await state.onEvent({
+        type: 'fetch-complete',
+        url: state.currentUrl,
+        statusCode: fetchResult.status,
+        contentLength: fetchResult.html.length
+      });
       
-      if (contentSignature && state.contentSignatures.has(contentSignature)) {
-        console.log(`⚠️ [FetchPage] Similar content detected for: ${state.currentUrl}`);
-        console.log(`⚠️ [FetchPage] Content signature match: ${contentSignature.substring(0, 50)}...`);
-        console.log(`⏱️ [FetchPage] Content similarity check took ${Date.now() - sigStartTime}ms`);
-        
-        // Get the next URL from the queue
-        if (!state.pageQueue.isEmpty()) {
-          const nextItem = state.pageQueue.dequeue();
-          if (nextItem) {
-            state.currentUrl = nextItem.url;
-            console.log(`⏭️ [FetchPage] Moving to next URL due to content similarity: ${state.currentUrl}`);
-            return state;
-          }
-        }
-        
-        // No more URLs to process
-        console.log(`🏁 [FetchPage] No more URLs in queue after skipping similar content`);
-        state.finalOutput = prepareOutput(state);
-        return state;
-      }
-      
-      // Add the content signature to our tracking set
-      if (contentSignature) {
-        state.contentSignatures.add(contentSignature);
-        console.log(`📝 [FetchPage] Added new content signature, total signatures: ${state.contentSignatures.size}`);
-      }
-      console.log(`⏱️ [FetchPage] Content similarity check took ${Date.now() - sigStartTime}ms`);
+      // Send workflow status event
+      await state.onEvent({
+        type: 'workflow-status',
+        step: 'fetch-page',
+        progress: 0.2,
+        message: `Fetched page content for ${state.currentUrl} (${(fetchResult.html.length / 1024).toFixed(1)} KB)`
+      });
     }
     
-    const endTime = Date.now();
-    console.log(`✅ [FetchPage] Fetch completed in ${endTime - startTime}ms total`);
-    
-    return {
-      ...state,
-      currentPageDOM: fetchResult.html,
-      currentPageText: fetchResult.html,
-      lastStatusCode: fetchResult.status
-    };
+    return state;
   } catch (error) {
-    const endTime = Date.now();
-    console.error(`❌ [FetchPage] Error fetching page in ${endTime - startTime}ms:`, error);
-    return {
-      ...state,
-      lastError: String(error)
-    };
+    console.error(`❌ [Workflow] Error fetching page ${state.currentUrl}:`, error);
+    state.lastError = `Fetch error: ${error instanceof Error ? error.message : String(error)}`;
+    
+    // Send error event
+    if (state.onEvent) {
+      await state.onEvent({
+        type: 'error',
+        error: state.lastError
+      });
+    }
+    
+    return state;
   }
 }
 
@@ -1007,7 +909,7 @@ function normalizeUrl(url: string): string {
 /**
  * Generate a signature for content to detect duplicates with different URLs
  */
-function getContentSignature(html: string): string {
+export function getContentSignature(html: string): string {
   try {
     // Create a DOM parser using JSDOM
     const dom = new JSDOM(html);
@@ -1037,6 +939,7 @@ function getContentSignature(html: string): string {
 export function createScraperWorkflow(options: {
   onAuthRequired?: (authRequest: HumanAuthRequest) => Promise<boolean>;
   onPageProcessed?: (pageContent: PageContent) => Promise<void>;
+  onEvent?: (event: ScraperStreamEvent) => Promise<void>;
 }) {
   // Create a StateGraph with the annotation-based state structure
   const workflow = new StateGraph(ScraperStateAnnotation)
@@ -1156,8 +1059,8 @@ export function createScraperWorkflow(options: {
         const lastFiveSnapshots = state.lastStateSnapshot.slice(-5);
         
         // Check if queue and extracted content haven't changed in last 5 snapshots
-        const queueSizes = new Set(lastFiveSnapshots.map(s => s.queueSize));
-        const extractedSizes = new Set(lastFiveSnapshots.map(s => s.extractedSize));
+        const queueSizes = new Set(lastFiveSnapshots.map((s: {queueSize: number}) => s.queueSize));
+        const extractedSizes = new Set(lastFiveSnapshots.map((s: {extractedSize: number}) => s.extractedSize));
         
         if (queueSizes.size === 1 && extractedSizes.size === 1 && state.extractedContent.size > 0) {
           console.warn(`⚠️ [Workflow] State stagnation detected! No changes in queue or extracted content for 5 consecutive checks. Ending workflow.`);
@@ -1193,6 +1096,7 @@ export async function executeScraperWorkflow(options: {
   authConfig?: AuthenticationConfig;
   onAuthRequired?: (authRequest: HumanAuthRequest) => Promise<boolean>;
   onPageProcessed?: (pageContent: PageContent) => Promise<void>;
+  onEvent?: (event: ScraperStreamEvent) => Promise<void>;
   config?: {
     recursionLimit?: number;
     maxIterations?: number;
@@ -1213,65 +1117,24 @@ export async function executeScraperWorkflow(options: {
   
   console.time('TotalScrapingOperation');
   
-  // Create the workflow using LangGraph
-  const workflow = createScraperWorkflow({
-    onAuthRequired: options.onAuthRequired,
-    onPageProcessed: options.onPageProcessed,
-  });
-  
-  // Initialize the state
-  const initialState: ExtendedScraperAgentState = {
-    baseUrl: options.baseUrl,
-    scrapingGoal: options.scrapingGoal,
-    maxPages: options.maxPages,
-    maxDepth: options.maxDepth,
-    includeImages: options.includeImages || false,
-    executeJavaScript: options.executeJavaScript,
-    preventDuplicateUrls: options.preventDuplicateUrls,
-    filters: options.filters || {},
-    
-    currentUrl: options.baseUrl,
-    visitedUrls: new Set<string>(),
-    pageQueue: createPriorityQueue(),
-    
-    currentPageDOM: "",
-    currentPageText: "",
-    extractedContent: new Map(),
-    
-    valueMetrics: {
-      informationDensity: 0,
-      relevance: 0,
-      uniqueness: 0,
-      completeness: 0
-    },
-    
-    requiresAuthentication: false,
-    authRequest: null,
-    
-    finalOutput: {
-      pages: [],
-      summary: {
-        pagesScraped: 0,
-        totalContentSize: 0,
-        executionTime: 0,
-        goalCompletion: 0,
-        coverageScore: 0
+  // Create a wrapped event handler that handles stream closure
+  const safeEventHandler = options.onEvent ? 
+    async (event: ScraperStreamEvent): Promise<void> => {
+      try {
+        await options.onEvent(event);
+      } catch (eventError) {
+        // Stream might be closed, just log the error
+        console.warn(`⚠️ [Workflow] Could not send event (${event.type}): ${eventError instanceof Error ? eventError.message : String(eventError)}`);
       }
-    },
-    
-    onPageProcessed: options.onPageProcessed,
-    normalizedUrls: new Set<string>(),
-    contentSignatures: new Set<string>(),
-    authAttempts: new Map<string, number>(),
-    
-    // Initialize debugging tracking variables
-    nodeVisitCounts: new Map<string, number>(),
-    executionPath: [],
-    lastStateSnapshot: []
+    } : undefined;
+
+  // Create a safe send event function that checks if handler exists
+  const safeSendEvent = async (event: ScraperStreamEvent): Promise<void> => {
+    if (safeEventHandler) {
+      await safeEventHandler(event);
+    }
   };
-  
-  const startTime = Date.now();
-  
+
   try {
     console.log(`🌐 [Workflow] Starting scraping with URL: ${options.baseUrl}`);
     
@@ -1283,67 +1146,78 @@ export async function executeScraperWorkflow(options: {
       deadlockDetectionMs: options.config?.deadlockDetectionMs || 20 * 1000, // Default 20 seconds
     };
     
-    console.log(`⚙️ [Workflow] Running with config: recursionLimit=${config.recursionLimit}, maxIterations=${config.maxIterations}, maxExecutionTimeMs=${config.maxExecutionTimeMs}, deadlockDetectionMs=${config.deadlockDetectionMs}`);
-    
-    // Set up a timeout to force termination if needed
-    const timeoutPromise = new Promise<ExtendedScraperAgentState>((resolve) => {
-      setTimeout(() => {
-        console.warn(`⚠️ [Workflow] Maximum execution time of ${config.maxExecutionTimeMs}ms reached. Forcing termination.`);
-        // Create a final state with whatever we have
-        const timeoutState = { ...initialState };
-        timeoutState.finalOutput = prepareOutput(initialState);
-        resolve(timeoutState);
-      }, config.maxExecutionTimeMs);
-    });
-    
-    // Set up deadlock detection
-    let lastProgressTime = Date.now();
-    let lastExtractedSize = 0;
-    let lastVisitedSize = 0;
-    
-    const deadlockPromise = new Promise<ExtendedScraperAgentState>((resolve) => {
-      const deadlockDetector = setInterval(() => {
-        const currentExtractedSize = initialState.extractedContent.size;
-        const currentVisitedSize = initialState.visitedUrls.size;
-        
-        // Check if there's been any progress
-        if (currentExtractedSize > lastExtractedSize || currentVisitedSize > lastVisitedSize) {
-          // Progress detected, update tracking variables
-          lastProgressTime = Date.now();
-          lastExtractedSize = currentExtractedSize;
-          lastVisitedSize = currentVisitedSize;
-          console.log(`🔄 [Workflow] Progress detected: ${currentExtractedSize} pages extracted, ${currentVisitedSize} URLs visited`);
-        } else {
-          // No progress detected, check how long we've been stuck
-          const stuckTime = Date.now() - lastProgressTime;
-          
-          if (stuckTime >= config.deadlockDetectionMs) {
-            console.warn(`⚠️ [Workflow] Potential deadlock detected! No progress for ${stuckTime}ms. Forcing termination.`);
-            clearInterval(deadlockDetector);
-            
-            // Create a final state with whatever we have
-            const deadlockState = { ...initialState };
-            deadlockState.finalOutput = prepareOutput(initialState);
-            
-            // Add deadlock info to the final output
-            if (deadlockState.finalOutput && deadlockState.finalOutput.summary) {
-              deadlockState.finalOutput.summary.goalCompletion = Math.max(0.1, deadlockState.valueMetrics.completeness || 0);
-              deadlockState.finalOutput.summary.coverageScore = Math.max(0.1, deadlockState.valueMetrics.relevance || 0);
-            }
-            
-            resolve(deadlockState);
-          } else {
-            // Log a warning if we've been stuck for a while
-            if (stuckTime > config.deadlockDetectionMs / 2) {
-              console.warn(`⚠️ [Workflow] No progress for ${stuckTime}ms. Potential deadlock!`);
-            }
-          }
+    // Wrap the callbacks with safe event handling
+    const safePageProcessed = options.onPageProcessed ? 
+      async (pageContent: PageContent): Promise<void> => {
+        try {
+          await options.onPageProcessed!(pageContent);
+        } catch (error) {
+          console.warn(`⚠️ [Workflow] Error in onPageProcessed: ${error instanceof Error ? error.message : String(error)}`);
         }
-      }, 2000); // Check every 2 seconds
-      
-      // Clean up the interval when we're done
-      setTimeout(() => clearInterval(deadlockDetector), config.maxExecutionTimeMs);
+      } : undefined;
+    
+    // Create the workflow with safe callbacks
+    const workflow = createScraperWorkflow({
+      onAuthRequired: options.onAuthRequired,
+      onPageProcessed: safePageProcessed,
+      onEvent: safeEventHandler,
     });
+    
+    // Initialize the state
+    const initialState: ExtendedScraperAgentState = {
+      baseUrl: options.baseUrl,
+      scrapingGoal: options.scrapingGoal,
+      maxPages: options.maxPages,
+      maxDepth: options.maxDepth,
+      includeImages: options.includeImages || false,
+      executeJavaScript: options.executeJavaScript,
+      preventDuplicateUrls: options.preventDuplicateUrls,
+      filters: options.filters || {},
+      
+      currentUrl: options.baseUrl,
+      visitedUrls: new Set<string>(),
+      pageQueue: createPriorityQueue(),
+      
+      currentPageDOM: "",
+      currentPageText: "",
+      extractedContent: new Map(),
+      
+      valueMetrics: {
+        informationDensity: 0,
+        relevance: 0,
+        uniqueness: 0,
+        completeness: 0
+      },
+      
+      requiresAuthentication: false,
+      authRequest: null,
+      
+      finalOutput: {
+        pages: [],
+        summary: {
+          pagesScraped: 0,
+          totalContentSize: 0,
+          executionTime: 0,
+          goalCompletion: 0,
+          coverageScore: 0
+        }
+      },
+      
+      onPageProcessed: options.onPageProcessed,
+      onEvent: options.onEvent,
+      normalizedUrls: new Set<string>(),
+      contentSignatures: new Set<string>(),
+      authAttempts: new Map<string, number>(),
+      
+      // Initialize debugging tracking variables
+      nodeVisitCounts: new Map<string, number>(),
+      executionPath: [],
+      lastStateSnapshot: []
+    };
+    
+    const startTime = Date.now();
+    
+    console.log(`⚙️ [Workflow] Running with config: recursionLimit=${config.recursionLimit}, maxIterations=${config.maxIterations}, maxExecutionTimeMs=${config.maxExecutionTimeMs}, deadlockDetectionMs=${config.deadlockDetectionMs}`);
     
     console.time('LangGraphWorkflowExecution');
     
@@ -1358,8 +1232,74 @@ export async function executeScraperWorkflow(options: {
       }
     );
     
-    // Race between normal completion, timeout, and deadlock detection
-    const result = await Promise.race([workflowPromise, timeoutPromise, deadlockPromise]);
+    // Set up timeout monitoring through events rather than competing promises
+    const timeoutId = setTimeout(async () => {
+      console.warn(`⚠️ [Workflow] Maximum execution time of ${config.maxExecutionTimeMs}ms reached.`);
+      
+      // Send warning event but don't stop the workflow
+      await safeSendEvent({
+        type: 'workflow-status',
+        step: 'timeout-warning',
+        progress: 0.5,
+        message: `Execution time exceeded ${config.maxExecutionTimeMs/1000}s. Process will continue but may be incomplete.`
+      });
+    }, config.maxExecutionTimeMs);
+    
+    // Set up deadlock detection through events
+    let lastProgressTime = Date.now();
+    let lastExtractedSize = 0;
+    let lastVisitedSize = 0;
+    let isWorkflowComplete = false;
+    
+    const deadlockDetectorId = setInterval(async () => {
+      // If workflow is already complete, stop checking
+      if (isWorkflowComplete) {
+        clearInterval(deadlockDetectorId);
+        return;
+      }
+      
+      const currentExtractedSize = initialState.extractedContent.size;
+      const currentVisitedSize = initialState.visitedUrls.size;
+      
+      // Check if there's been any progress
+      if (currentExtractedSize > lastExtractedSize || currentVisitedSize > lastVisitedSize) {
+        // Progress detected, update tracking variables
+        lastProgressTime = Date.now();
+        lastExtractedSize = currentExtractedSize;
+        lastVisitedSize = currentVisitedSize;
+        console.log(`🔄 [Workflow] Progress detected: ${currentExtractedSize} pages extracted, ${currentVisitedSize} URLs visited`);
+      } else {
+        // No progress detected, check how long we've been stuck
+        const stuckTime = Date.now() - lastProgressTime;
+        
+        if (stuckTime >= config.deadlockDetectionMs) {
+          console.warn(`⚠️ [Workflow] Potential deadlock detected! No progress for ${stuckTime}ms.`);
+          
+          // Send warning event but don't stop the workflow
+          await safeSendEvent({
+            type: 'workflow-status',
+            step: 'deadlock-warning',
+            progress: 0.5,
+            message: `No progress detected for ${Math.round(stuckTime/1000)}s. Process will continue.`
+          });
+        } else {
+          // Log a warning if we've been stuck for a while
+          if (stuckTime > config.deadlockDetectionMs / 2) {
+            console.warn(`⚠️ [Workflow] No progress for ${stuckTime}ms. Potential deadlock!`);
+          }
+        }
+      }
+    }, 2000); // Check every 2 seconds
+    
+    // Let the workflow run to completion
+    const result = await workflowPromise;
+    
+    // Mark workflow as complete to stop the detectors
+    isWorkflowComplete = true;
+    
+    // Clean up timeout and interval
+    clearTimeout(timeoutId);
+    clearInterval(deadlockDetectorId);
     
     console.timeEnd('LangGraphWorkflowExecution');
     
@@ -1411,8 +1351,8 @@ export async function executeScraperWorkflow(options: {
     }
     
     // Log detailed page information
-    console.log(`📑 [Workflow] Page details:`);
-    result.finalOutput.pages.forEach((page, index) => {
+    console.log(`📑 [Workflow] Page details:`, result.finalOutput.pages);
+    result.finalOutput.pages.forEach((page: PageContent, index) => {
       console.log(`  [${index + 1}] ${page.url} - "${page.title}"`);
       console.log(`      Content: ${page.content.length} chars, Links: ${page.links.length}, Relevance: ${page.metrics.relevance.toFixed(2)}`);
     });

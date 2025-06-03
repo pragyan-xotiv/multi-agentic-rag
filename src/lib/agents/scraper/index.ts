@@ -145,6 +145,8 @@ export class ScraperAgent {
           // In streaming mode, we don't handle auth automatically
           return false;
         },
+        // Pass the onEvent callback to the workflow
+        onEvent: onEvent,
         config: {
           recursionLimit: 100, // Increased recursion limit to handle complex websites
           maxIterations: 50    // Increased max iterations to allow for more page processing

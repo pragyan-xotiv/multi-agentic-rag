@@ -1,5 +1,5 @@
 // Scraper Event Types
-export type EventTypes = 'start' | 'page' | 'auth' | 'error' | 'end';
+export type EventTypes = 'start' | 'page' | 'auth' | 'error' | 'end' | 'processing' | 'processing-complete' | 'complete' | 'warning';
 
 export interface PageData {
   url: string;
@@ -11,6 +11,21 @@ export interface PageData {
     contentQualityAnalysis?: string;
   };
   links?: string[];
+  status?: string;
+  progress?: number | null;
+}
+
+export interface ProcessingData {
+  title: string;
+  status: string;
+  progress: number | null;
+}
+
+export interface ProcessingCompleteData {
+  title: string;
+  details: string;
+  entities: number;
+  relationships: number;
 }
 
 export interface AuthRequest {
@@ -29,11 +44,23 @@ export interface StartEvent {
   type: 'start';
   url: string;
   goal: string;
+  friendly_title?: string;
+  friendly_message?: string;
 }
 
 export interface PageEvent {
   type: 'page';
   data: PageData;
+}
+
+export interface ProcessingEvent {
+  type: 'processing';
+  data: ProcessingData;
+}
+
+export interface ProcessingCompleteEvent {
+  type: 'processing-complete';
+  data: ProcessingCompleteData;
 }
 
 export interface AuthEvent {
@@ -44,14 +71,39 @@ export interface AuthEvent {
 export interface ErrorEvent {
   type: 'error';
   error: string;
+  friendly_title?: string;
+  friendly_message?: string;
 }
 
 export interface EndEvent {
   type: 'end';
   output: ScraperResultsType;
+  friendly_title?: string;
+  friendly_message?: string;
+  timing?: {
+    total_ms: number;
+    formatted: string;
+  };
 }
 
-export type ScraperEvent = StartEvent | PageEvent | AuthEvent | ErrorEvent | EndEvent;
+export interface CompleteEvent {
+  type: 'complete';
+  friendly_title: string;
+  friendly_message: string;
+  timing?: {
+    total_ms: number;
+    formatted: string;
+  };
+}
+
+export interface WarningEvent {
+  type: 'warning';
+  message: string;
+  friendly_title?: string;
+  friendly_message?: string;
+}
+
+export type ScraperEvent = StartEvent | PageEvent | AuthEvent | ErrorEvent | EndEvent | ProcessingEvent | ProcessingCompleteEvent | CompleteEvent | WarningEvent;
 
 export interface ScraperResultsType {
   pages: Array<{

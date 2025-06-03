@@ -6,8 +6,32 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { ControllerAgent } from '@/lib/agents/controller';
-import { ControllerRequest, ControllerStreamEvent } from '@/lib/agents/controller/types';
+import { ControllerRequest, ControllerStreamEvent, ControllerEventType } from '@/lib/agents/controller/types';
 import { createClient } from '@supabase/supabase-js';
+
+// Extend the ControllerEventType to include our new types
+type ExtendedControllerEventType = 
+  | ControllerEventType 
+  | 'heartbeat' 
+  | 'warning'
+  | 'analyze-url'
+  | 'fetch-start'
+  | 'fetch-complete'
+  | 'extract-content'
+  | 'discover-links'
+  | 'evaluate-progress'
+  | 'decide-next-action'
+  | 'workflow-status';
+
+// Define our extended event interface
+interface ExtendedControllerStreamEvent extends Omit<ControllerStreamEvent, 'type'> {
+  type: ExtendedControllerEventType;
+  timestamp?: number;
+  formatted_time?: string;
+  friendly_title?: string;
+  friendly_message?: string;
+  elapsed_ms?: number;
+}
 
 // Initialize Supabase client
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -96,16 +120,108 @@ export async function POST(req: NextRequest) {
       const encoder = new TextEncoder();
       const stream = new ReadableStream({
         async start(streamController) {
-          const sendEvent = async (event: ControllerStreamEvent) => {
-            const data = `data: ${JSON.stringify(event)}\n\n`;
+          const sendEvent = async (event: ControllerStreamEvent | ExtendedControllerStreamEvent) => {
+            // Add timestamp to all events
+            const enhancedEvent: ExtendedControllerStreamEvent = {
+              ...event,
+              timestamp: Date.now(),
+              formatted_time: new Date().toISOString()
+            };
+
+            // Add user-friendly messages for specific event types
+            if (event.type === 'scraping-progress') {
+              // Improve progress messages with more detail
+              if (event.data && typeof event.data === 'object' && event.data !== null && 'url' in event.data) {
+                enhancedEvent.friendly_title = `Processing page: ${event.data.url}`;
+                enhancedEvent.friendly_message = `Extracting content from ${event.data.url}`;
+                
+                // Add progress percentage if available
+                if (event.progress) {
+                  enhancedEvent.friendly_message += ` (${Math.round(event.progress * 100)}% complete)`;
+                }
+              }
+            } else if (event.type === 'scraping-complete') {
+              enhancedEvent.friendly_title = 'Scraping completed';
+              
+              // Add details about pages scraped
+              if (event.data && typeof event.data === 'object' && event.data !== null && 'pages' in event.data) {
+                const pageCount = Array.isArray(event.data.pages) ? event.data.pages.length : 0;
+                enhancedEvent.friendly_message = `Successfully scraped ${pageCount} page${pageCount !== 1 ? 's' : ''}`;
+              }
+            } else if (event.type === 'processing-started') {
+              enhancedEvent.friendly_title = 'Processing content';
+              enhancedEvent.friendly_message = 'Analyzing and extracting structured knowledge';
+            } else if (event.type === 'processing-complete') {
+              enhancedEvent.friendly_title = 'Processing completed';
+              
+              // Add details about entities extracted
+              if (event.data && typeof event.data === 'object' && event.data !== null && 'entities' in event.data) {
+                const entityCount = Array.isArray(event.data.entities) ? event.data.entities.length : 0;
+                enhancedEvent.friendly_message = `Extracted ${entityCount} entity${entityCount !== 1 ? 'ies' : 'y'}`;
+                
+                // Safely check for relationships
+                if (
+                  event.data && 
+                  typeof event.data === 'object' && 
+                  'relationships' in event.data &&
+                  Array.isArray(event.data.relationships) && 
+                  event.data.relationships.length > 0
+                ) {
+                  const relationshipCount = event.data.relationships.length;
+                  enhancedEvent.friendly_message += ` and ${relationshipCount} relationship${relationshipCount !== 1 ? 's' : ''}`;
+                }
+              }
+            } else if (event.type === 'error') {
+              // Provide user-friendly error messages
+              enhancedEvent.friendly_title = 'Error occurred';
+              
+              // Special handling for common errors
+              if (event.error && typeof event.error === 'string') {
+                // Determine if this is a fatal error or a recoverable warning
+                const isFatalError = 
+                  event.error.includes('fatal') || 
+                  event.error.includes('failed') ||
+                  event.error.includes('timeout exceeded');
+                
+                // For content-related issues that might be temporary, treat as warnings
+                const isContentWarning = 
+                  event.error.includes('no content') || 
+                  event.error.includes('returned no content') ||
+                  event.error.includes('empty response');
+                
+                // Set appropriate event type and styling
+                if (isContentWarning && !isFatalError) {
+                  enhancedEvent.type = 'warning' as ExtendedControllerEventType;
+                  enhancedEvent.friendly_title = 'Content warning';
+                  enhancedEvent.friendly_message = 'Some content may be missing. The operation will continue.';
+                } else if (event.error.includes('recursion limit')) {
+                  enhancedEvent.friendly_message = 'The website structure is too complex. Try with fewer pages or a more specific URL.';
+                } else if (event.error.includes('deadlock')) {
+                  enhancedEvent.friendly_message = 'Processing stalled. This site may use anti-scraping measures or complex JavaScript.';
+                } else if (event.error.includes('timeout')) {
+                  enhancedEvent.friendly_message = 'The operation took too long to complete. Try with a smaller scope.';
+                } else {
+                  enhancedEvent.friendly_message = event.message || 'An unexpected error occurred while processing the request.';
+                }
+              } else {
+                enhancedEvent.friendly_message = event.message || 'An unexpected error occurred while processing the request.';
+              }
+            }
+            
+            const data = `data: ${JSON.stringify(enhancedEvent)}\n\n`;
             streamController.enqueue(encoder.encode(data));
           };
+          
+          // Track operation timing
+          const operationStart = Date.now();
           
           try {
             // Start streaming
             await sendEvent({ 
               type: 'start', 
-              message: `Starting ${requestData.requestType} operation` 
+              message: `Starting ${requestData.requestType} operation`,
+              friendly_title: 'Starting operation',
+              friendly_message: `Beginning to process ${requestData.url || 'content'}`
             });
             
             // Process with streaming
@@ -113,12 +229,25 @@ export async function POST(req: NextRequest) {
               requestData as ControllerRequest,
               sendEvent
             );
+
+            console.log('🔍 [API] Streaming result:', result);
+            
+            // Add operation timing to the final result
+            const resultWithTiming = {
+              ...result,
+              timing: {
+                total_ms: Date.now() - operationStart,
+                formatted: `${((Date.now() - operationStart) / 1000).toFixed(2)}s`
+              }
+            };
             
             // Final event with full result
             await sendEvent({
               type: 'complete',
               message: 'Operation complete',
-              data: result
+              data: resultWithTiming,
+              friendly_title: 'Operation complete',
+              friendly_message: `Processed ${requestData.url || 'content'} in ${((Date.now() - operationStart) / 1000).toFixed(2)} seconds`
             });
             
             // Close the stream
@@ -130,7 +259,10 @@ export async function POST(req: NextRequest) {
             await sendEvent({
               type: 'error',
               error: error instanceof Error ? error.message : 'An unknown error occurred',
-              message: 'Error processing request'
+              message: 'Error processing request',
+              friendly_title: 'Processing failed',
+              friendly_message: error instanceof Error ? 
+                error.message : 'The operation could not be completed'
             });
             
             // Close the stream

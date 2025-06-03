@@ -130,7 +130,15 @@ export type ScraperStreamEvent =
   | { type: 'page'; data: PageContent }
   | { type: 'auth'; request: HumanAuthRequest }
   | { type: 'end'; output: ScraperOutput }
-  | { type: 'error'; error: string };
+  | { type: 'error'; error: string }
+  | { type: 'analyze-url'; url: string; depth: number }
+  | { type: 'fetch-start'; url: string; useJavaScript: boolean }
+  | { type: 'fetch-complete'; url: string; statusCode: number; contentLength: number }
+  | { type: 'extract-content'; url: string; contentType: string }
+  | { type: 'discover-links'; url: string; linkCount: number }
+  | { type: 'evaluate-progress'; pagesScraped: number; queueSize: number; goalCompletion: number }
+  | { type: 'decide-next-action'; decision: 'continue' | 'stop' | 'change-strategy'; reason: string }
+  | { type: 'workflow-status'; step: string; progress: number; message: string };
 
 /**
  * Result from fetching a page
