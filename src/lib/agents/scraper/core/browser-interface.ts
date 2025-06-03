@@ -64,12 +64,49 @@ async function fetchWithPuppeteer(url: string, options: FetchOptions = {}, timeo
   
   let browser;
   try {
-    // Launch a headless browser
-    browser = await puppeteer.launch({ 
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
-    console.log(`🌐 [BrowserInterface] Puppeteer browser launched`);
+    // Check if we're in a Vercel serverless environment
+    const isVercel = process.env.VERCEL === '1';
+    
+    if (isVercel) {
+      console.log(`🔧 [BrowserInterface] Detected Vercel environment, using @sparticuz/chromium`);
+      
+      try {
+        // Dynamically import the packages we need for Vercel
+        const puppeteerCore = await import('puppeteer-core');
+        const chromium = await import('@sparticuz/chromium');
+        
+        // Launch browser with chromium for Vercel
+        browser = await puppeteerCore.default.launch({
+          args: chromium.default.args,
+          defaultViewport: chromium.default.defaultViewport,
+          executablePath: await chromium.default.executablePath(),
+          headless: true,
+        });
+        
+        console.log(`🌐 [BrowserInterface] Vercel Puppeteer browser launched with @sparticuz/chromium`);
+      } catch (chromiumError) {
+        console.error(`❌ [BrowserInterface] Error initializing @sparticuz/chromium:`, chromiumError);
+        console.log(`🔄 [BrowserInterface] Falling back to standard Puppeteer`);
+        
+        // Fall back to standard Puppeteer if chromium initialization fails
+        browser = await puppeteer.launch({ 
+          headless: true,
+          args: ['--no-sandbox', '--disable-setuid-sandbox']
+        });
+      }
+    } else {
+      // Launch standard Puppeteer for local development
+      browser = await puppeteer.launch({ 
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+      });
+      console.log(`🌐 [BrowserInterface] Standard Puppeteer browser launched`);
+    }
+    
+    // Check if browser was successfully initialized
+    if (!browser) {
+      throw new Error('Failed to initialize browser');
+    }
     
     // Create a new page
     const page = await browser.newPage();
@@ -104,26 +141,7 @@ async function fetchWithPuppeteer(url: string, options: FetchOptions = {}, timeo
     // Get the page content
     const html = await page.content();
     console.log(`📏 [BrowserInterface] HTML length (after JS execution): ${html.length} bytes`);
-    
-    // Special debugging for xotiv.com
-    if (url.includes('xotiv.com')) {
-      console.log(`🔎 [BrowserInterface] XOTIV.COM DEBUGGING: Special logging for xotiv.com`);
-      console.log(`🔎 [BrowserInterface] Using Puppeteer with full JavaScript execution`);
-      
-      // Take a screenshot for debugging
-      const screenshot = await page.screenshot();
-      console.log(`🔎 [BrowserInterface] Screenshot taken, size: ${screenshot.length} bytes`);
-      
-      // Get the page title
-      const title = await page.title();
-      console.log(`🔎 [BrowserInterface] Page title: ${title}`);
-      
-      // Check if there's a main content area
-      const hasMainContent = await page.evaluate(() => {
-        return Boolean(document.querySelector('main') || document.querySelector('article') || document.querySelector('.content'));
-      });
-      console.log(`🔎 [BrowserInterface] Main content detected: ${hasMainContent}`);
-    }
+
     
     return {
       html,
