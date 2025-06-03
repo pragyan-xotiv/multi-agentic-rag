@@ -141,4 +141,5 @@ export interface PageFetchResult {
   finalUrl: string;
   headers: Record<string, string>;
   error?: string;
+  fallbackMode?: boolean;
 }

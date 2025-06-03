@@ -829,9 +829,9 @@ export class ControllerAgent {
    * @returns Formatted entity text
    */
   private formatEntityForStorage(entity: Entity): string {
-    const properties = Object.entries(entity.properties)
+    const properties = entity.properties ? Object.entries(entity.properties)
       .map(([key, value]) => `${key}: ${value}`)
-      .join('\n');
+      .join('\n') : 'No properties available';
       
     return `Entity: ${entity.name}\nType: ${entity.type}\nProperties:\n${properties}`;
   }

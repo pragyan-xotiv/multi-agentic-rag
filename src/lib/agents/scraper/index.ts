@@ -46,8 +46,8 @@ export class ScraperAgent {
         authConfig: this.authConfig,
         onAuthRequired: options.onAuthRequired,
         config: {
-          recursionLimit: 100, // Increase recursion limit to handle more pages
-          maxIterations: 50    // Add a safety mechanism to limit total iterations
+          recursionLimit: 100, // Increased recursion limit to handle complex websites
+          maxIterations: 50    // Increased max iterations to allow for more page processing
         }
       });
       
@@ -146,8 +146,8 @@ export class ScraperAgent {
           return false;
         },
         config: {
-          recursionLimit: 100,
-          maxIterations: 50
+          recursionLimit: 100, // Increased recursion limit to handle complex websites
+          maxIterations: 50    // Increased max iterations to allow for more page processing
         }
       });
       

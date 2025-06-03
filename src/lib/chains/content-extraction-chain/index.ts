@@ -135,6 +135,16 @@ export async function runContentExtractionChain(
     const previousTopics = getPreviousTopicsSummary(input.currentState);
     console.log(`📚 [ContentExtraction Chain] Previous topics: ${previousTopics}`);
 
+    console.log(`🔍 [ContentExtraction Chain] Prompt Template: ${{
+      getFormatInstructions: parser.getFormatInstructions(),
+      url: input.url,
+      title: extractionResult.title,
+      contentPreview: contentPreview,
+      contentType: extractionResult.contentType,
+      scrapingGoal: input.currentState.scrapingGoal,
+      previousTopics: previousTopics,
+    }}`);
+
     // Create the chain
     const chain = RunnableSequence.from([
       {
