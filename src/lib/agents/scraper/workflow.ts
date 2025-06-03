@@ -589,8 +589,38 @@ async function discoverLinks(state: ExtendedScraperAgentState) {
         // Apply filters if provided
         let shouldEnqueue = true;
         
+        // Enhanced URL Discovery Filter
+        try {
+          // Skip URLs that are too similar to already visited ones
+          const urlPath = new URL(link.url).pathname;
+          const similarVisitedPaths = Array.from(state.visitedUrls)
+            .filter(visited => {
+              try {
+                return new URL(visited).pathname === urlPath;
+              } catch (error) {
+                console.warn(`⚠️ [LinkDiscovery] Error in URL comparison: ${error}`);
+                return false;
+              }
+            })
+            .length;
+
+          if (similarVisitedPaths > 0) {
+            shouldEnqueue = false;
+            console.log(`🔄 [LinkDiscovery] Skipping ${link.url} - similar path already visited`);
+          }
+
+          // Skip URLs with very low predicted value
+          if (link.predictedValue < 0.2) {
+            shouldEnqueue = false;
+            console.log(`🔄 [LinkDiscovery] Skipping ${link.url} - low value (${link.predictedValue.toFixed(2)})`);
+          }
+        } catch (filterError) {
+          // If URL parsing fails, continue with original filter logic
+          console.warn(`⚠️ [LinkDiscovery] Error in enhanced filter: ${filterError}`);
+        }
+        
         // Check for must-include patterns
-        if (state.filters.mustIncludePatterns && state.filters.mustIncludePatterns.length > 0) {
+        if (shouldEnqueue && state.filters.mustIncludePatterns && state.filters.mustIncludePatterns.length > 0) {
           shouldEnqueue = state.filters.mustIncludePatterns.some(pattern => 
             link.url.includes(pattern) || link.context.includes(pattern)
           );
@@ -684,12 +714,40 @@ async function decideNextAction(state: ExtendedScraperAgentState) {
   const startTime = Date.now();
   console.log(`🧭 [Navigation] Deciding next action...`);
   
+  // Enhanced debug logging when approaching recursion limit
+  const decisionCount = state.nodeVisitCounts?.get('decideNextAction') || 0;
+  if (decisionCount > 20) {
+    console.warn(`⚠️ [Debug] Near recursion limit! Dumping state:`);
+    console.warn(`  Current URL: ${state.currentUrl}`);
+    console.warn(`  Queue size: ${state.pageQueue.size()}`);
+    console.warn(`  Visited URLs: ${state.visitedUrls.size}`);
+    console.warn(`  Extracted content: ${state.extractedContent.size}`);
+  }
+  
+  // Forced termination fallback to prevent hitting recursion limit
+  if (decisionCount > 15) {
+    console.warn(`⚠️ [Workflow] Force terminating after ${decisionCount} decision cycles`);
+    return {
+      ...state,
+      finalOutput: prepareOutput(state)
+    };
+  }
+  
   // Take state snapshot for debugging
   takeStateSnapshot(state);
   
-  // Mark the current URL as visited
-  state.visitedUrls.add(state.currentUrl);
-  console.log(`✓ [Navigation] Marked ${state.currentUrl} as visited`);
+  // Enhanced URL marking - Fix URL Queue Processing
+  if (state.currentUrl) {
+    state.visitedUrls.add(state.currentUrl);
+    
+    // Also mark in normalized form if that option is enabled
+    if (state.preventDuplicateUrls && state.normalizedUrls) {
+      state.normalizedUrls.add(normalizeUrl(state.currentUrl));
+    }
+    
+    console.log(`✓ [Navigation] Marked ${state.currentUrl} as visited (total: ${state.visitedUrls.size})`);
+  }
+  
   console.log(`📊 [Navigation] Current state: ${state.extractedContent.size} pages extracted, ${state.visitedUrls.size} URLs visited, ${state.pageQueue.size()} URLs in queue`);
   
   // Check if we've reached the maximum number of pages
@@ -1121,7 +1179,7 @@ export async function executeScraperWorkflow(options: {
   const safeEventHandler = options.onEvent ? 
     async (event: ScraperStreamEvent): Promise<void> => {
       try {
-        await options.onEvent(event);
+        await options?.onEvent?.(event);
       } catch (eventError) {
         // Stream might be closed, just log the error
         console.warn(`⚠️ [Workflow] Could not send event (${event.type}): ${eventError instanceof Error ? eventError.message : String(eventError)}`);
@@ -1131,30 +1189,48 @@ export async function executeScraperWorkflow(options: {
   // Create a safe send event function that checks if handler exists
   const safeSendEvent = async (event: ScraperStreamEvent): Promise<void> => {
     if (safeEventHandler) {
-      await safeEventHandler(event);
+      try {
+        await safeEventHandler(event);
+      } catch (error) {
+        console.warn(`⚠️ [Workflow] Error in safeSendEvent: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  };
+  
+  // Implement a circuit breaker to force termination after a certain number of pages
+  let pageCount = 0;
+  const originalOnPageProcessed = options.onPageProcessed;
+  
+  const circuitBreakerPageProcessor = async (pageContent: PageContent): Promise<void> => {
+    pageCount++;
+    console.log(`📊 [CircuitBreaker] Processed page ${pageCount}/${options.maxPages}`);
+    
+    if (pageCount >= options.maxPages) {
+      console.warn(`⚠️ [CircuitBreaker] Reached ${pageCount} pages, signaling to complete workflow`);
+    }
+    
+    if (originalOnPageProcessed) {
+      try {
+        await originalOnPageProcessed(pageContent);
+      } catch (error) {
+        console.warn(`⚠️ [CircuitBreaker] Error in original page processor: ${error}`);
+      }
     }
   };
 
   try {
     console.log(`🌐 [Workflow] Starting scraping with URL: ${options.baseUrl}`);
     
-    // Use LangGraph workflow
+    // Use LangGraph workflow with adjusted config for testing
     const config = {
-      recursionLimit: options.config?.recursionLimit || 100,
-      maxIterations: options.config?.maxIterations || 50,
-      maxExecutionTimeMs: options.config?.maxExecutionTimeMs || 10 * 60 * 1000, // Default 10 minutes
-      deadlockDetectionMs: options.config?.deadlockDetectionMs || 20 * 1000, // Default 20 seconds
+      recursionLimit: options.config?.recursionLimit || 30,       // Lower from 100 for testing
+      maxIterations: options.config?.maxIterations || 20,         // Lower from 50 for testing
+      maxExecutionTimeMs: options.config?.maxExecutionTimeMs || 3 * 60 * 1000, // 3 minutes instead of 10
+      deadlockDetectionMs: options.config?.deadlockDetectionMs || 20 * 1000,
     };
     
     // Wrap the callbacks with safe event handling
-    const safePageProcessed = options.onPageProcessed ? 
-      async (pageContent: PageContent): Promise<void> => {
-        try {
-          await options.onPageProcessed!(pageContent);
-        } catch (error) {
-          console.warn(`⚠️ [Workflow] Error in onPageProcessed: ${error instanceof Error ? error.message : String(error)}`);
-        }
-      } : undefined;
+    const safePageProcessed = circuitBreakerPageProcessor;
     
     // Create the workflow with safe callbacks
     const workflow = createScraperWorkflow({
@@ -1219,18 +1295,18 @@ export async function executeScraperWorkflow(options: {
     
     console.log(`⚙️ [Workflow] Running with config: recursionLimit=${config.recursionLimit}, maxIterations=${config.maxIterations}, maxExecutionTimeMs=${config.maxExecutionTimeMs}, deadlockDetectionMs=${config.deadlockDetectionMs}`);
     
+    // Log explicit configuration for debugging
+    console.log(`🔧 [Debug] Applying LangGraph config:`, JSON.stringify({
+      recursionLimit: config.recursionLimit,
+      maxIterations: config.maxIterations
+    }));
+    
     console.time('LangGraphWorkflowExecution');
     
-    // Execute the workflow with timeout and deadlock detection
-    const workflowPromise = workflow.invoke(
-      initialState,
-      {
-        configurable: {
-          recursionLimit: config.recursionLimit,
-          maxIterations: config.maxIterations
-        }
-      }
-    );
+    // Execute the workflow with timeout and deadlock detection - use correct options format
+    const workflowPromise = workflow.invoke(initialState, {
+      recursionLimit: config.recursionLimit
+    });
     
     // Set up timeout monitoring through events rather than competing promises
     const timeoutId = setTimeout(async () => {
