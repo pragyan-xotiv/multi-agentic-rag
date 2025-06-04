@@ -280,20 +280,41 @@ export default function ScraperPage() {
               
               // Handle page events directly
               if (data.type === "page" && data.data) {
-                setEvents(prev => [...prev, {
-                  type: "page",
-                  data: {
-                    url: data.data.url,
-                    title: data.data.title || 'Processed page',
-                    metrics: {
-                      relevance: data.data.metrics?.relevance || 0,
-                      informationDensity: data.data.metrics?.informationDensity || 0,
-                      contentQualityAnalysis: data.data.metrics?.contentQualityAnalysis || 'Unknown',
-                      uniqueness: data.data.metrics?.uniqueness || 0,
-                    },
-                    status: `Extracted content (${data.data.content.length} characters)`,
+                console.log("🔍 [Scraper UI] Received page event:", data);
+                
+                // Use functional update to deduplicate page events by URL
+                setEvents(prevEvents => {
+                  // Check if we already have a page event with this URL
+                  const existingEventIndex = prevEvents.findIndex(
+                    event => event.type === "page" && event.data?.url === data.data.url
+                  );
+                  
+                  // Create the new page event
+                  const newPageEvent: ScraperEvent = {
+                    type: "page",
+                    data: {
+                      url: data.data.url,
+                      title: data.data.title || 'Processed page',
+                      metrics: {
+                        relevance: data.data.metrics?.relevance || 0,
+                        informationDensity: data.data.metrics?.informationDensity || 0,
+                        contentQualityAnalysis: data.data.metrics?.contentQualityAnalysis || 'Unknown',
+                        uniqueness: data.data.metrics?.uniqueness || 0,
+                      },
+                      status: `Extracted content (${data.data.content.length} characters)`,
+                    }
+                  };
+                  
+                  // If the URL already exists, update that event
+                  if (existingEventIndex !== -1) {
+                    const updatedEvents = [...prevEvents];
+                    updatedEvents[existingEventIndex] = newPageEvent;
+                    return updatedEvents;
                   }
-                }]);
+                  
+                  // Otherwise, add as a new event
+                  return [...prevEvents, newPageEvent];
+                });
               }
               
               // Handle end event

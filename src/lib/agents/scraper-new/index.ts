@@ -108,6 +108,7 @@ export class ScraperAgent {
       console.log(`🏁 [ScraperAgent] Scraping completed, sending 'end' event`);
       await onEvent({
         type: 'end',
+        url: options.baseUrl,
         output: result
       });
       
@@ -118,6 +119,7 @@ export class ScraperAgent {
       // Send error event
       await onEvent({
         type: 'error',
+        url: options.baseUrl,
         error: error instanceof Error ? error.message : String(error)
       });
       

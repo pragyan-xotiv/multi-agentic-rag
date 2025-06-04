@@ -6,7 +6,7 @@
  */
 
 import { ScraperAgent as NonRecursiveScraperAgent } from './index';
-import { ScraperAgent as OriginalScraperAgent } from '../scraper';
+// import { ScraperAgent as OriginalScraperAgent } from '../scraper';
 import { ScraperOptions, ScraperOutput, ScraperStreamEvent } from './types';
 
 /**
@@ -34,7 +34,8 @@ export function getScraperAgent(config?: Partial<ScraperConfig>) {
     return new NonRecursiveScraperAgent();
   } else {
     console.log('🔄 [Controller] Using original scraper implementation');
-    return new OriginalScraperAgent();
+    // return new OriginalScraperAgent();
+    return new NonRecursiveScraperAgent();
   }
 }
 
