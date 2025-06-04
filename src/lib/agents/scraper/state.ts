@@ -1,5 +1,5 @@
 import { Annotation } from "@langchain/langgraph";
-import { ScraperOutput, HumanAuthRequest, PageContent, PriorityQueue } from "./types";
+import { ScraperOutput, HumanAuthRequest, PageContent, PriorityQueue, ScraperStreamEvent } from "./types";
 
 /**
  * Define the scraper workflow state using Annotation
@@ -60,5 +60,6 @@ export const ScraperStateAnnotation = Annotation.Root({
   // URL normalization and content deduplication
   normalizedUrls: Annotation<Set<string>>(),
   contentSignatures: Annotation<Set<string>>(),
-  authAttempts: Annotation<Map<string, number>>()
+  authAttempts: Annotation<Map<string, number>>(),
+  onEvent: Annotation<((event: ScraperStreamEvent) => Promise<void>) | undefined>()
 }); 

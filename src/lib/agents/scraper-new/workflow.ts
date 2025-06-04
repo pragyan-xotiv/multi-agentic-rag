@@ -40,6 +40,8 @@ async function processUrl(state: ExtendedScraperAgentState) {
     state.finalOutput = prepareOutput(state);
     return state;
   }
+
+  console.log('🔍 [ProcessUrl] Event 1:', state.onEvent);
   
   // Send event if configured
   if (state.onEvent) {
@@ -104,6 +106,7 @@ async function fetchPageContent(state: ExtendedScraperAgentState) {
     console.log(`📊 [FetchPage] Page size: ${fetchResult.html.length} bytes, text length: ${state.currentPageText.length} chars`);
     console.log(`⏭️ [WorkflowTransition] fetchPage → detectAuthentication`);
     
+    console.log('🔍 [ProcessUrl] Event 2:', state.onEvent);
     // Send event about completed page fetch
     if (state.onEvent) {
       await state.onEvent({
@@ -112,7 +115,7 @@ async function fetchPageContent(state: ExtendedScraperAgentState) {
         statusCode: fetchResult.status,
         contentLength: fetchResult.html.length
       });
-      
+
       // Send workflow status event
       await state.onEvent({
         type: 'workflow-status',
@@ -471,6 +474,7 @@ async function finalizeProcessing(state: ExtendedScraperAgentState) {
     console.log(`📦 [Finalize] Prepared output for ${state.currentUrl}`);
   }
   
+  console.log('🔍 [ProcessUrl] Event 3:', state.onEvent);
   // Send completion event
   if (state.onEvent) {
     await state.onEvent({
@@ -605,7 +609,8 @@ export async function processSingleUrl(options: {
       currentUrlDepth: options.depth,
       discoveredUrls: [],
       processingComplete: false,
-      currentPageOutput: null
+      currentPageOutput: null,
+      onEvent: options.onEvent
     };
     
     // Execute the workflow for a single URL

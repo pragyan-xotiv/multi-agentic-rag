@@ -53,7 +53,8 @@ export const ScraperStateAnnotation = Annotation.Root({
   // Batch processing additions
   discoveredUrls: Annotation<UrlQueueItem[]>(),
   processingComplete: Annotation<boolean>(),
-  currentPageOutput: Annotation<PageContent | null>()
+  currentPageOutput: Annotation<PageContent | null>(),
+  onEvent: Annotation<(event: ScraperStreamEvent) => Promise<void>>()
 }); 
 
 /**
