@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from 'react';
-import StreamingToggle from './StreamingToggle';
 import { ControllerResponse, ControllerStreamEvent } from '@/lib/agents/controller/types';
+import { ScraperStreamEvent } from '@/lib/agents/scraper-new/types';
 
 interface ControllerFormProps {
   onResultsReceived?: (results: ControllerResponse) => void;
@@ -13,52 +13,106 @@ export default function ControllerForm({ onResultsReceived, onStreamingEvent }: 
   const [url, setUrl] = useState('');
   const [scrapingGoal, setScrapingGoal] = useState('');
   const [processingGoal, setProcessingGoal] = useState('');
-  const [isStreaming, setIsStreaming] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Process streaming events from EventSource
-  const handleStreamingEvents = (eventSource: EventSource) => {
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        console.log('Streaming event:', data);
-        
-        // Forward event to parent component if handler exists
-        if (onStreamingEvent) {
-          onStreamingEvent(data);
-        }
-        
-        // Handle completion
-        if (data.type === 'complete') {
+  // Process streaming events from ScraperAgent
+  const handleScraperEvents = async (reader: ReadableStreamDefaultReader<Uint8Array>) => {
+    const decoder = new TextDecoder();
+    
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
           setIsLoading(false);
-          eventSource.close();
-          
-          // Send final results to parent
-          if (onResultsReceived && data.data) {
-            onResultsReceived(data.data);
+          break;
+        }
+
+        const chunk = decoder.decode(value, { stream: true });
+        const events = chunk.split('\n').filter(Boolean);
+
+        for (const eventText of events) {
+          try {
+            const event = JSON.parse(eventText) as ScraperStreamEvent;
+            console.log('Scraper event:', event.type, event);
+            
+            // Forward event to parent component if handler exists
+            if (onStreamingEvent) {
+              // Map scraper event to controller event format for compatibility
+              let controllerEvent: ControllerStreamEvent;
+              
+              switch (event.type) {
+                case 'start':
+                  controllerEvent = {
+                    type: 'scraping-started',
+                    message: `Starting to scrape ${event.url}`,
+                    data: { url: event.url }
+                  };
+                  break;
+                  
+                case 'page':
+                  controllerEvent = {
+                    type: 'scraping-progress',
+                    message: `Scraped page: ${event.data.url}`,
+                    data: event.data
+                  };
+                  break;
+                  
+                case 'error':
+                  controllerEvent = {
+                    type: 'error',
+                    error: event.error,
+                    message: `Error: ${event.error}`
+                  };
+                  setError(event.error);
+                  setIsLoading(false);
+                  break;
+                  
+                case 'end':
+                  controllerEvent = {
+                    type: 'complete',
+                    message: 'Scraping completed',
+                    data: {
+                      success: true,
+                      result: {
+                        scraperResult: event.output
+                      }
+                    }
+                  };
+                  
+                  // Send final results to parent
+                  if (onResultsReceived) {
+                    onResultsReceived({
+                      success: true,
+                      result: {
+                        scraperResult: event.output
+                      }
+                    });
+                  }
+                  
+                  setIsLoading(false);
+                  break;
+                  
+                default:
+                  controllerEvent = {
+                    type: 'scraping-progress',
+                    message: `Event: ${event.type}`,
+                    data: event
+                  };
+              }
+              
+              onStreamingEvent(controllerEvent);
+            }
+          } catch (err) {
+            console.error('Error parsing scraper event:', err, eventText);
           }
         }
-        
-        // Handle errors
-        if (data.type === 'error') {
-          setError(data.message || 'An error occurred');
-          setIsLoading(false);
-          eventSource.close();
-        }
-      } catch (err) {
-        console.error('Error parsing streaming event:', err);
-        setError('Error processing streaming data');
-        setIsLoading(false);
-        eventSource.close();
       }
-    };
-    
-    eventSource.onerror = () => {
-      setError('Connection error');
+    } catch (err) {
+      console.error('Error reading stream:', err);
+      setError('Error processing streaming data');
       setIsLoading(false);
-      eventSource.close();
-    };
+    }
   };
 
   // Handle form submission
@@ -68,56 +122,43 @@ export default function ControllerForm({ onResultsReceived, onStreamingEvent }: 
     setIsLoading(true);
     
     try {
-      const requestData = {
-        requestType: 'scrape-and-process',
-        url,
+      // Prepare scraper request
+      const scraperRequest = {
+        baseUrl: url,
         scrapingGoal,
-        processingGoal,
-        stream: isStreaming,
-        options: {
-          maxPages: 10,
-          maxDepth: 2,
-          executeJavaScript: true
-        },
-        storageOptions: {
-          storeResults: true,
-          storeEntities: true,
-          storeRelationships: true,
-          storeContentChunks: true
+        maxPages: 10,
+        maxDepth: 2,
+        executeJavaScript: true,
+        preventDuplicateUrls: true,
+        filters: {
+          mustIncludePatterns: [],
+          excludePatterns: []
         }
       };
       
-      if (isStreaming) {
-        // Use EventSource for streaming
-        const queryParams = new URLSearchParams({
-          data: JSON.stringify(requestData)
-        }).toString();
-        
-        const eventSource = new EventSource(`/api/controller/stream?${queryParams}`);
-        handleStreamingEvents(eventSource);
-      } else {
-        // Standard fetch for non-streaming
-        const response = await fetch('/api/controller', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(requestData),
-        });
-        
-        const result = await response.json();
-        
-        if (!response.ok) {
-          throw new Error(result.error || 'Failed to process request');
-        }
-        
-        // Send results to parent component
-        if (onResultsReceived) {
-          onResultsReceived(result);
-        }
-        
-        setIsLoading(false);
+      console.log('📝 [Form] Using non-recursive scraper API directly');
+      
+      // Call the non-recursive scraper API
+      const response = await fetch('/api/scraper/non-recursive', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(scraperRequest),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Scraper API returned ${response.status}: ${response.statusText}`);
       }
+      
+      // Get the reader from the response body
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('Unable to read response stream');
+      }
+      
+      // Process the scraper events
+      await handleScraperEvents(reader);
     } catch (err) {
       console.error('Error submitting form:', err);
       setError(err instanceof Error ? err.message : 'An unknown error occurred');
@@ -162,23 +203,26 @@ export default function ControllerForm({ onResultsReceived, onStreamingEvent }: 
         
         <div>
           <label htmlFor="processingGoal" className="block text-sm font-medium text-gray-700">
-            Processing Goal
+            Processing Goal (Deprecated)
           </label>
           <input
             type="text"
             id="processingGoal"
             value={processingGoal}
             onChange={(e) => setProcessingGoal(e.target.value)}
-            placeholder="Identify entities and relationships..."
-            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+            disabled
+            placeholder="This field is deprecated"
+            className="mt-1 block w-full px-3 py-2 border border-gray-300 bg-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
           />
+          <p className="mt-1 text-xs text-gray-500">
+            Processing is now handled separately from scraping
+          </p>
         </div>
         
-        <div>
-          <StreamingToggle 
-            initialState={isStreaming} 
-            onToggle={setIsStreaming}
-          />
+        <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
+          <p className="text-sm text-blue-700">
+            <strong>Note:</strong> This form now uses the non-recursive scraper implementation for improved reliability on complex websites.
+          </p>
         </div>
         
         {error && (

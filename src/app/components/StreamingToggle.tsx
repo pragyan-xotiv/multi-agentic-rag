@@ -5,9 +5,10 @@ import { useState } from 'react';
 interface StreamingToggleProps {
   onToggle: (enabled: boolean) => void;
   initialState?: boolean;
+  label?: string;
 }
 
-export default function StreamingToggle({ onToggle, initialState = true }: StreamingToggleProps) {
+export default function StreamingToggle({ onToggle, initialState = true, label }: StreamingToggleProps) {
   const [enabled, setEnabled] = useState(initialState);
 
   const handleToggle = () => {
@@ -34,7 +35,7 @@ export default function StreamingToggle({ onToggle, initialState = true }: Strea
         />
       </button>
       <span className="text-sm font-medium text-gray-900">
-        {enabled ? 'Streaming enabled' : 'Streaming disabled'}
+        {label || (enabled ? 'Streaming enabled' : 'Streaming disabled')}
       </span>
       <div className="ml-2 text-xs text-gray-500">
         {enabled 

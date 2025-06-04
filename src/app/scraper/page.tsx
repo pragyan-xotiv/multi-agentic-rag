@@ -115,35 +115,28 @@ export default function ScraperPage() {
         JSON.stringify(config, null, 2),
       );
 
-      // Format data for controller agent
-      const controllerRequest = {
-        requestType: "scrape-and-process",
-        url: config.baseUrl,
+      // Format data for non-recursive scraper API
+      const scraperRequest = {
+        baseUrl: config.baseUrl,
         scrapingGoal: config.scrapingGoal,
-        processingGoal: "Extract key entities, relationships, and structured knowledge from content",
-        stream: isStreaming,
-        options: {
-          maxPages: config.maxPages,
-          maxDepth: config.maxDepth,
-          includeImages: config.includeImages,
-          executeJavaScript: config.executeJavaScript,
-          filters: config.filters,
-          storeInVectorDb: true,
-          namespace: `scrape-${Date.now()}`,
-          preventDuplicateUrls: true
-        }
+        maxPages: config.maxPages,
+        maxDepth: config.maxDepth,
+        includeImages: config.includeImages,
+        executeJavaScript: config.executeJavaScript,
+        preventDuplicateUrls: true,
+        filters: config.filters
       };
 
-      console.log("🎮 [Scraper UI] Using Controller Agent with streaming:", isStreaming);
+      console.log("🧠 [Scraper UI] Using Non-Recursive Scraper with streaming:", isStreaming);
 
       if (isStreaming) {
         // Streaming API call
-        const response = await fetch("/api/controller", {
+        const response = await fetch("/api/scraper/non-recursive", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(controllerRequest),
+          body: JSON.stringify(scraperRequest),
         });
 
         if (!response.ok) {
@@ -185,108 +178,56 @@ export default function ScraperPage() {
 
           for (const line of lines) {
             try {
-              // Extract the data part from the SSE format
+              // Extract the data part if it's in SSE format, otherwise parse directly
               const dataMatch = line.match(/^data: (.+)$/);
               const eventData = dataMatch ? JSON.parse(dataMatch[1]) : JSON.parse(line);
               
               eventCount++;
               console.log(
                 `🔄 [Scraper UI] Processing event #${eventCount}:`,
-                eventData.type,
-                eventData.friendly_title ? `(${eventData.friendly_title})` : ''
+                eventData.type
               );
 
-              // Map controller events to scraper events with enhanced UI information
+              // Map non-recursive scraper events directly to the UI events
               if (eventData.type === "start") {
                 setEvents(prev => [...prev, {
                   type: "start",
-                  url: eventData.data?.url || config.baseUrl,
-                  goal: config.scrapingGoal,
-                  friendly_title: eventData.friendly_title,
-                  friendly_message: eventData.friendly_message
+                  url: eventData.url,
+                  goal: eventData.goal,
+                  friendly_title: "Starting scrape operation",
+                  friendly_message: `Beginning to scrape ${eventData.url}`
                 }]);
-              } else if (eventData.type === "scraping-started") {
-                setEvents(prev => [...prev, {
-                  type: "start",
-                  url: eventData.data?.url || config.baseUrl,
-                  goal: config.scrapingGoal,
-                  friendly_title: eventData.friendly_title,
-                  friendly_message: eventData.friendly_message
-                }]);
-              } else if (eventData.type === "scraping-progress") {
-                // Extract URL from the friendly title if available
-                let url = config.baseUrl;
-                if (eventData.friendly_title && eventData.friendly_title.includes(':')) {
-                  url = eventData.friendly_title.split(':')[1].trim();
-                }
-                
-                // Create a more informative page event
+              } else if (eventData.type === "page") {
                 setEvents(prev => [...prev, {
                   type: "page",
                   data: {
-                    url: eventData.data?.url || url,
-                    title: eventData.friendly_title || 'Processing page',
+                    url: eventData.data.url,
+                    title: eventData.data.title || 'Processed page',
                     metrics: {
-                      relevance: eventData.data?.metrics?.relevance || 0,
-                      informationDensity: eventData.data?.metrics?.informationDensity || 0,
+                      relevance: eventData.data.metrics?.relevance || 0,
+                      informationDensity: eventData.data.metrics?.informationDensity || 0,
                     },
-                    status: eventData.friendly_message,
-                    progress: eventData.progress ? Math.round(eventData.progress * 100) : null
-                  }
-                }]);
-              } else if (eventData.type === "scraping-complete") {
-                setEvents(prev => [...prev, {
-                  type: "end",
-                  output: eventData.data,
-                  friendly_title: eventData.friendly_title,
-                  friendly_message: eventData.friendly_message,
-                  timing: eventData.data?.timing
-                }]);
-                
-                setResults(eventData.data);
-                setActiveTab("results");
-              } else if (eventData.type === "processing-started" || eventData.type === "processing-progress") {
-                // Add processing events as a special type of page event
-                setEvents(prev => [...prev, {
-                  type: "processing",
-                  data: {
-                    title: eventData.friendly_title || 'Processing content',
-                    status: eventData.friendly_message || 'Analyzing and extracting knowledge',
-                    progress: eventData.progress ? Math.round(eventData.progress * 100) : null
-                  }
-                }]);
-              } else if (eventData.type === "processing-complete") {
-                setEvents(prev => [...prev, {
-                  type: "processing-complete",
-                  data: {
-                    title: eventData.friendly_title || 'Processing complete',
-                    details: eventData.friendly_message || 'Knowledge extraction finished',
-                    entities: eventData.data?.entities?.length || 0,
-                    relationships: eventData.data?.relationships?.length || 0
+                    status: `Extracted content (${eventData.data.content.length} characters)`,
                   }
                 }]);
               } else if (eventData.type === "error") {
                 setEvents(prev => [...prev, {
                   type: "error",
                   error: eventData.error || "Unknown error",
-                  friendly_title: eventData.friendly_title,
-                  friendly_message: eventData.friendly_message
+                  friendly_title: "Error occurred",
+                  friendly_message: eventData.error || "An error occurred during scraping"
                 }]);
-              } else if (eventData.type === "warning") {
-                // Handle warnings (non-fatal errors that allow the process to continue)
+              } else if (eventData.type === "end") {
                 setEvents(prev => [...prev, {
-                  type: "warning",
-                  message: eventData.error || eventData.message || "Warning",
-                  friendly_title: eventData.friendly_title || "Warning",
-                  friendly_message: eventData.friendly_message || "The operation encountered an issue but will continue."
+                  type: "end",
+                  output: eventData.output,
+                  friendly_title: "Scraping complete",
+                  friendly_message: `Successfully scraped ${eventData.output.summary.pagesScraped} pages`
                 }]);
                 
-                // Show toast notification for warnings
-                toast.warning(eventData.friendly_title || "Warning", {
-                  description: eventData.friendly_message || "The operation encountered an issue but will continue."
-                });
+                setResults(eventData.output);
+                setActiveTab("results");
               } else if (eventData.type === "analyze-url") {
-                // URL analysis events
                 setEvents(prev => [...prev, {
                   type: "processing",
                   data: {
@@ -296,7 +237,6 @@ export default function ScraperPage() {
                   }
                 }]);
               } else if (eventData.type === "fetch-start") {
-                // Fetch start events
                 setEvents(prev => [...prev, {
                   type: "processing",
                   data: {
@@ -306,7 +246,6 @@ export default function ScraperPage() {
                   }
                 }]);
               } else if (eventData.type === "fetch-complete") {
-                // Fetch complete events
                 setEvents(prev => [...prev, {
                   type: "processing",
                   data: {
@@ -316,7 +255,6 @@ export default function ScraperPage() {
                   }
                 }]);
               } else if (eventData.type === "extract-content") {
-                // Content extraction events
                 setEvents(prev => [...prev, {
                   type: "processing",
                   data: {
@@ -326,7 +264,6 @@ export default function ScraperPage() {
                   }
                 }]);
               } else if (eventData.type === "discover-links") {
-                // Link discovery events
                 setEvents(prev => [...prev, {
                   type: "processing",
                   data: {
@@ -336,7 +273,6 @@ export default function ScraperPage() {
                   }
                 }]);
               } else if (eventData.type === "evaluate-progress") {
-                // Progress evaluation events
                 setEvents(prev => [...prev, {
                   type: "processing",
                   data: {
@@ -346,7 +282,6 @@ export default function ScraperPage() {
                   }
                 }]);
               } else if (eventData.type === "decide-next-action") {
-                // Decision events
                 setEvents(prev => [...prev, {
                   type: "processing",
                   data: {
@@ -356,7 +291,6 @@ export default function ScraperPage() {
                   }
                 }]);
               } else if (eventData.type === "workflow-status") {
-                // General workflow status events
                 setEvents(prev => [...prev, {
                   type: "processing",
                   data: {
@@ -364,17 +298,6 @@ export default function ScraperPage() {
                     status: eventData.message,
                     progress: Math.round(eventData.progress * 100)
                   }
-                }]);
-              } else if (eventData.type === "heartbeat") {
-                // We don't need to add heartbeat events to the UI
-                console.log(`💓 [Scraper UI] Heartbeat received: ${eventData.elapsed_ms}ms elapsed`);
-              } else if (eventData.type === "complete") {
-                // Final completion message
-                setEvents(prev => [...prev, {
-                  type: "complete",
-                  friendly_title: eventData.friendly_title || 'Operation complete',
-                  friendly_message: eventData.friendly_message || 'Processing completed successfully',
-                  timing: eventData.data?.timing
                 }]);
               }
             } catch (e) {
@@ -384,13 +307,13 @@ export default function ScraperPage() {
         }
       } else {
         // Non-streaming API call
-        console.log("🚀 [Scraper UI] Using non-streaming controller endpoint");
-        const response = await fetch("/api/controller", {
+        console.log("🚀 [Scraper UI] Using non-streaming scraper endpoint");
+        const response = await fetch("/api/scraper/non-recursive/sync", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(controllerRequest),
+          body: JSON.stringify(scraperRequest),
         });
 
         if (!response.ok) {
@@ -405,20 +328,20 @@ export default function ScraperPage() {
         const result = await response.json();
         console.log("✅ [Scraper UI] Received complete results:", result);
         
-        if (!result.success) {
-          throw new Error(result.error || "Failed to scrape content");
+        if (!result || !result.pages) {
+          throw new Error("Failed to receive valid scraper result");
         }
-        
-        const scraperResult = result.result.scraperResult;
         
         // Create a synthetic end event
         const endEvent: ScraperEvent = {
           type: "end",
-          output: scraperResult,
+          output: result,
+          friendly_title: "Scraping complete",
+          friendly_message: `Successfully scraped ${result.summary.pagesScraped} pages`
         };
         
         setEvents([endEvent]);
-        setResults(scraperResult);
+        setResults(result);
         setActiveTab("results");
       }
 
