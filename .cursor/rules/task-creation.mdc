@@ -1,0 +1,31 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Rule: Task Documentation via Cursor Tasks
+
+## Purpose
+Ensure all new features and bug fixes are tracked using structured task files, while enforcing code quality and consistency.
+
+## Instructions
+
+When documenting a new feature, bug fix, or technical change:
+
+1. **Do not modify any code directly** during this task creation phase.
+2. **Create a new markdown file** in the `@cursor-tasks` folder.
+3. **Name the file** as `Task-<next_number>.md`, where `<next_number>` is the next number after the highest existing task file (e.g., if the last file is `Task-4.md`, the new one should be `Task-5.md`).
+4. Follow the structure defined in `@STRUCTURED_OUTPUT_TASK.md` for documenting the task.
+5. Stay **strictly within the provided context** (e.g., relevant SQL file or module).
+6. Ensure that the described steps **do not break any existing functionality**.
+7. When the task is later implemented in code, the solution must follow **modern best coding practices**, including:
+   - Code clarity and maintainability
+   - Proper error handling
+   - Adherence to existing project architecture and standards
+   - Minimal side effects and good modular design
+
+## Applies To
+- Feature requests  
+- Bug reports  
+- Technical enhancements  
+- Refactoring tasks

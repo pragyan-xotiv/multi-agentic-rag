@@ -1,0 +1,25 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+@rule task-implementation
+
+# Task-Based Implementation Workflow
+
+## Purpose
+Every implementation must be based on an approved task file located in `@cursor-tasks/`.
+
+## Implementation Instructions
+- Use the task file (e.g., `@cursor-tasks/Task-2.md`) as the single source of truth.
+- Only modify code relevant to the described task scope.
+- Avoid unrelated file edits.
+- Follow coding best practices.
+- Write clean, modular code.
+- Add necessary unit/integration tests.
+- Do not break existing functionality.
+
+## Cursor Execution
+- Extract file paths, interfaces, and logic only from the task file.
+- Use the task filename to guide implementation.
+- Reject implementation if task file is missing or unclear.
