@@ -240,6 +240,7 @@ export class ScraperOrchestrator {
         // Send error event
         if (this.baseState.onEvent) {
           await this.baseState.onEvent({
+            url: this.baseState.baseUrl || '',
             type: 'error',
             error: error instanceof Error ? error.message : String(error)
           });
@@ -263,6 +264,7 @@ export class ScraperOrchestrator {
     if (this.baseState.onEvent) {
       const batchDuration = Date.now() - batchStartTime;
       await this.baseState.onEvent({
+        url: this.baseState.baseUrl || '',
         type: 'workflow-status',
         step: 'batch-complete',
         progress: this.extractedContent.size / (this.baseState.maxPages || 20),
@@ -316,6 +318,7 @@ export class ScraperOrchestrator {
       // Send the end event
       if (this.baseState.onEvent) {
         await this.baseState.onEvent({
+          url: this.baseState.baseUrl || '',
           type: 'end',
           output: finalOutput
         });
@@ -331,6 +334,7 @@ export class ScraperOrchestrator {
       // Send error event
       if (this.baseState.onEvent) {
         await this.baseState.onEvent({
+          url: this.baseState.baseUrl || '',
           type: 'error',
           error: error instanceof Error ? error.message : String(error)
         });

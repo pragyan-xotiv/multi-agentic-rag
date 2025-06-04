@@ -280,7 +280,6 @@ export default function ScraperPage() {
               
               // Handle page events directly
               if (data.type === "page" && data.data) {
-                console.log("🔍 [Scraper UI] Received page event:", data);
                 setEvents(prev => [...prev, {
                   type: "page",
                   data: {

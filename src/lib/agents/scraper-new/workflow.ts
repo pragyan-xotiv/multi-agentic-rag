@@ -48,6 +48,7 @@ async function processUrl(state: ExtendedScraperAgentState) {
     await state.onEvent({
       type: 'workflow-status',
       step: 'process-url',
+      url: state.currentUrl,
       progress: state.extractedContent.size / state.maxPages,
       message: `Processing URL: ${state.currentUrl}`
     });
@@ -121,6 +122,7 @@ async function fetchPageContent(state: ExtendedScraperAgentState) {
         type: 'workflow-status',
         step: 'fetch-page',
         progress: 0.2,
+        url: state.currentUrl,
         message: `Fetched page content for ${state.currentUrl} (${(fetchResult.html.length / 1024).toFixed(1)} KB)`
       });
     }
@@ -134,6 +136,7 @@ async function fetchPageContent(state: ExtendedScraperAgentState) {
     if (state.onEvent) {
       await state.onEvent({
         type: 'error',
+        url: state.currentUrl,
         error: state.lastError
       });
     }
@@ -216,6 +219,7 @@ async function handleAuthentication(state: ExtendedScraperAgentState, options: {
   if (state.authRequest && state.onEvent) {
     await state.onEvent({
       type: 'auth',
+      url: state.currentUrl,
       request: state.authRequest
     });
   }
@@ -294,6 +298,7 @@ async function extractPageContent(state: ExtendedScraperAgentState) {
     if (state.onEvent) {
       await state.onEvent({
         type: 'page',
+        url: state.currentUrl,
         data: pageContent
       });
     }
@@ -447,6 +452,7 @@ async function queueDiscovery(state: ExtendedScraperAgentState) {
   if (state.onEvent) {
     await state.onEvent({
       type: 'evaluate-progress',
+      url: state.currentUrl,
       pagesScraped: state.extractedContent.size,
       queueSize: discoveredUrls.length, // This is just the newly discovered URLs
       goalCompletion: Math.min(state.extractedContent.size / state.maxPages, 1.0)
@@ -480,6 +486,7 @@ async function finalizeProcessing(state: ExtendedScraperAgentState) {
     await state.onEvent({
       type: 'workflow-status',
       step: 'url-complete',
+      url: state.currentUrl,
       progress: state.extractedContent.size / state.maxPages,
       message: `Completed processing for ${state.currentUrl}`
     });
