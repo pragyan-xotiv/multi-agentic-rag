@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -26,8 +26,14 @@ import {
 import { toast } from "sonner";
 import StreamingToggle from "@/app/components/StreamingToggle";
 
+// Interface for SSE events
+interface SSEEvent extends MessageEvent {
+  data: string;
+}
+
 export default function ScraperPage() {
   const [isLoading, setIsLoading] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
   const [activeTab, setActiveTab] = useState("config");
   const [scrapingConfig, setScrapingConfig] = useState<ScrapingConfig>({
     baseUrl: "",
@@ -45,6 +51,18 @@ export default function ScraperPage() {
   const [events, setEvents] = useState<ScraperEvent[]>([]);
   const [useJavaScript, setUseJavaScript] = useState(true);
   const [isStreaming, setIsStreaming] = useState(true);
+  
+  const eventSourceRef = useRef<EventSource | null>(null);
+
+  // Clean up event source on unmount
+  useEffect(() => {
+    return () => {
+      if (eventSourceRef.current) {
+        console.log('Cleaning up event source connection');
+        eventSourceRef.current.close();
+      }
+    };
+  }, []);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
@@ -93,221 +111,261 @@ export default function ScraperPage() {
         scrapingConfig.baseUrl,
       );
 
-      // Prepare the config object
-      const config = {
-        ...scrapingConfig,
-        filters: {
-          mustIncludePatterns: scrapingConfig.filters.mustIncludePatterns
-            ? scrapingConfig.filters.mustIncludePatterns
-                .split(",")
-                .map((p) => p.trim())
-            : [],
-          excludePatterns: scrapingConfig.filters.excludePatterns
-            ? scrapingConfig.filters.excludePatterns
-                .split(",")
-                .map((p) => p.trim())
-            : [],
-        },
-      };
-
-      console.log(
-        "📋 [Scraper UI] Prepared config:",
-        JSON.stringify(config, null, 2),
-      );
-
-      // Format data for non-recursive scraper API
-      const scraperRequest = {
-        baseUrl: config.baseUrl,
-        scrapingGoal: config.scrapingGoal,
-        maxPages: config.maxPages,
-        maxDepth: config.maxDepth,
-        includeImages: config.includeImages,
-        executeJavaScript: config.executeJavaScript,
-        preventDuplicateUrls: true,
-        filters: config.filters
-      };
-
-      console.log("🧠 [Scraper UI] Using Non-Recursive Scraper with streaming:", isStreaming);
+      // Format filters if present
+      const mustIncludePatterns = scrapingConfig.filters.mustIncludePatterns
+        ? scrapingConfig.filters.mustIncludePatterns
+            .split(",")
+            .map((p) => p.trim())
+        : [];
+      
+      const excludePatterns = scrapingConfig.filters.excludePatterns
+        ? scrapingConfig.filters.excludePatterns
+            .split(",")
+            .map((p) => p.trim())
+        : [];
+      
+      // Close any existing connection
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+        setIsConnected(false);
+      }
 
       if (isStreaming) {
-        // Streaming API call
-        const response = await fetch("/api/scraper/non-recursive", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(scraperRequest),
-        });
-
-        if (!response.ok) {
-          console.error(
-            "❌ [Scraper UI] API response error:",
-            response.status,
-            response.statusText,
-          );
-          throw new Error(`Failed to start scraping: ${response.statusText}`);
-        }
-
-        console.log(
-          "✅ [Scraper UI] API connection established, status:",
-          response.status,
-        );
-
-        // Handle the streaming response
-        const reader = response.body?.getReader();
-        if (!reader) {
-          throw new Error("Response body is null");
-        }
-
-        const decoder = new TextDecoder();
-        console.log("📡 [Scraper UI] Starting to read stream");
-
-        let eventCount = 0;
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            console.log("🏁 [Scraper UI] Stream completed");
-            break;
-          }
-
-          const chunk = decoder.decode(value);
-          console.log(`📦 [Scraper UI] Received chunk: ${chunk.length} bytes`);
-
-          const lines = chunk.split("\n").filter((line) => line.trim());
-          console.log(`📜 [Scraper UI] Chunk contains ${lines.length} events`);
-
-          for (const line of lines) {
+        // Build query string for EventSource with GET parameters
+        const queryParams = new URLSearchParams();
+        queryParams.append('baseUrl', scrapingConfig.baseUrl);
+        queryParams.append('scrapingGoal', scrapingConfig.scrapingGoal);
+        
+        // The API expects these as query params for GET requests
+        const apiUrl = `/api/scraper/non-recursive?${queryParams.toString()}`;
+        console.log("📡 [Scraper UI] Setting up EventSource with URL:", apiUrl);
+        
+        try {
+          // Set up EventSource for SSE (always uses GET)
+          const eventSource = new EventSource(apiUrl);
+          eventSourceRef.current = eventSource;
+          
+          // Add initial status event
+          setEvents(prev => [...prev, {
+            type: "processing",
+            data: {
+              title: "Connecting to scraper service",
+              status: "Establishing connection...",
+              progress: 0
+            }
+          }]);
+          
+          // Connection opened
+          eventSource.onopen = () => {
+            console.log("✅ [Scraper UI] EventSource connection established");
+            setIsConnected(true);
+            setEvents(prev => [...prev, {
+              type: "start",
+              url: scrapingConfig.baseUrl,
+              goal: scrapingConfig.scrapingGoal,
+              friendly_title: "Starting scrape operation",
+              friendly_message: `Beginning to scrape ${scrapingConfig.baseUrl}`
+            }]);
+          };
+          
+          // Connection error
+          eventSource.onerror = (error) => {
+            console.error("❌ [Scraper UI] EventSource error:", error);
+            setEvents(prev => [...prev, {
+              type: "error",
+              error: "Connection error with the scraper service",
+              friendly_title: "Connection error",
+              friendly_message: "Lost connection to the scraper service"
+            }]);
+            setIsConnected(false);
+            setIsLoading(false);
+            eventSource.close();
+          };
+          
+          // Initial connection event
+          eventSource.addEventListener('connection', (event: SSEEvent) => {
             try {
-              // Extract the data part if it's in SSE format, otherwise parse directly
-              const dataMatch = line.match(/^data: (.+)$/);
-              const eventData = dataMatch ? JSON.parse(dataMatch[1]) : JSON.parse(line);
+              const data = JSON.parse(event.data);
+              console.log("🔌 [Scraper UI] Connection event:", data);
+              setEvents(prev => [...prev, {
+                type: "processing",
+                data: {
+                  title: "Connection established",
+                  status: data.message || "Connected to scraper service",
+                  progress: 5
+                }
+              }]);
+            } catch (error) {
+              console.error("Error parsing connection event:", error);
+            }
+          });
+          
+          // Generic scraper events
+          eventSource.addEventListener('scraper-event', (event: SSEEvent) => {
+            try {
+              const data = JSON.parse(event.data);
+              console.log("📥 [Scraper UI] Received scraper event:", data.type);
               
-              eventCount++;
-              console.log(
-                `🔄 [Scraper UI] Processing event #${eventCount}:`,
-                eventData.type
-              );
-
-              // Map non-recursive scraper events directly to the UI events
-              if (eventData.type === "start") {
-                setEvents(prev => [...prev, {
-                  type: "start",
-                  url: eventData.url,
-                  goal: eventData.goal,
-                  friendly_title: "Starting scrape operation",
-                  friendly_message: `Beginning to scrape ${eventData.url}`
-                }]);
-              } else if (eventData.type === "page") {
-                setEvents(prev => [...prev, {
-                  type: "page",
-                  data: {
-                    url: eventData.data.url,
-                    title: eventData.data.title || 'Processed page',
-                    metrics: {
-                      relevance: eventData.data.metrics?.relevance || 0,
-                      informationDensity: eventData.data.metrics?.informationDensity || 0,
-                    },
-                    status: `Extracted content (${eventData.data.content.length} characters)`,
-                  }
-                }]);
-              } else if (eventData.type === "error") {
-                setEvents(prev => [...prev, {
-                  type: "error",
-                  error: eventData.error || "Unknown error",
-                  friendly_title: "Error occurred",
-                  friendly_message: eventData.error || "An error occurred during scraping"
-                }]);
-              } else if (eventData.type === "end") {
-                setEvents(prev => [...prev, {
-                  type: "end",
-                  output: eventData.output,
-                  friendly_title: "Scraping complete",
-                  friendly_message: `Successfully scraped ${eventData.output.summary.pagesScraped} pages`
-                }]);
-                
-                setResults(eventData.output);
-                setActiveTab("results");
-              } else if (eventData.type === "analyze-url") {
+              // Handle workflow status events
+              if (data.type === "workflow-status") {
                 setEvents(prev => [...prev, {
                   type: "processing",
                   data: {
-                    title: `Analyzing URL`,
-                    status: `Evaluating ${eventData.url} (depth: ${eventData.depth})`,
-                    progress: 10
-                  }
-                }]);
-              } else if (eventData.type === "fetch-start") {
-                setEvents(prev => [...prev, {
-                  type: "processing",
-                  data: {
-                    title: `Fetching page`,
-                    status: `Loading ${eventData.url} (JavaScript: ${eventData.useJavaScript ? 'enabled' : 'disabled'})`,
-                    progress: 20
-                  }
-                }]);
-              } else if (eventData.type === "fetch-complete") {
-                setEvents(prev => [...prev, {
-                  type: "processing",
-                  data: {
-                    title: `Page loaded`,
-                    status: `Loaded ${eventData.url} (status: ${eventData.statusCode}, size: ${(eventData.contentLength / 1024).toFixed(1)} KB)`,
-                    progress: 30
-                  }
-                }]);
-              } else if (eventData.type === "extract-content") {
-                setEvents(prev => [...prev, {
-                  type: "processing",
-                  data: {
-                    title: `Extracting content`,
-                    status: `Processing ${eventData.url} (type: ${eventData.contentType})`,
-                    progress: 40
-                  }
-                }]);
-              } else if (eventData.type === "discover-links") {
-                setEvents(prev => [...prev, {
-                  type: "processing",
-                  data: {
-                    title: `Discovering links`,
-                    status: `Found ${eventData.linkCount} links on ${eventData.url}`,
-                    progress: 50
-                  }
-                }]);
-              } else if (eventData.type === "evaluate-progress") {
-                setEvents(prev => [...prev, {
-                  type: "processing",
-                  data: {
-                    title: `Evaluating progress`,
-                    status: `Scraped ${eventData.pagesScraped} pages, ${eventData.queueSize} in queue (${Math.round(eventData.goalCompletion * 100)}% complete)`,
-                    progress: 60
-                  }
-                }]);
-              } else if (eventData.type === "decide-next-action") {
-                setEvents(prev => [...prev, {
-                  type: "processing",
-                  data: {
-                    title: `Planning next steps`,
-                    status: `Decision: ${eventData.decision} - ${eventData.reason}`,
-                    progress: 70
-                  }
-                }]);
-              } else if (eventData.type === "workflow-status") {
-                setEvents(prev => [...prev, {
-                  type: "processing",
-                  data: {
-                    title: `Workflow step: ${eventData.step}`,
-                    status: eventData.message,
-                    progress: Math.round(eventData.progress * 100)
+                    title: `Workflow step: ${data.step}`,
+                    status: data.message || "Processing workflow step",
+                    progress: Math.round((data.progress || 0) * 100)
                   }
                 }]);
               }
-            } catch (e) {
-              console.error("❌ [Scraper UI] Failed to parse event:", line, e);
+              
+              // Handle URL processing events
+              if (data.type === "analyze-url") {
+                setEvents(prev => [...prev, {
+                  type: "processing",
+                  data: {
+                    title: "Analyzing URL",
+                    status: `Evaluating ${data.url} (depth: ${data.depth})`,
+                    progress: 10
+                  }
+                }]);
+              }
+              
+              // Handle fetch events
+              if (data.type === "fetch-start") {
+                setEvents(prev => [...prev, {
+                  type: "processing",
+                  data: {
+                    title: "Fetching page",
+                    status: `Loading ${data.url} (JavaScript: ${data.useJavaScript ? 'enabled' : 'disabled'})`,
+                    progress: 20
+                  }
+                }]);
+              }
+              
+              if (data.type === "fetch-complete") {
+                setEvents(prev => [...prev, {
+                  type: "processing",
+                  data: {
+                    title: "Page loaded",
+                    status: `Loaded ${data.url} (status: ${data.statusCode}, size: ${(data.contentLength / 1024).toFixed(1)} KB)`,
+                    progress: 30
+                  }
+                }]);
+              }
+              
+              // Handle content extraction events
+              if (data.type === "extract-content") {
+                setEvents(prev => [...prev, {
+                  type: "processing",
+                  data: {
+                    title: "Extracting content",
+                    status: `Processing ${data.url} (type: ${data.contentType})`,
+                    progress: 40
+                  }
+                }]);
+              }
+              
+              // Handle link discovery events
+              if (data.type === "discover-links") {
+                setEvents(prev => [...prev, {
+                  type: "processing",
+                  data: {
+                    title: "Discovering links",
+                    status: `Found ${data.linkCount} links on ${data.url}`,
+                    progress: 50
+                  }
+                }]);
+              }
+              
+              // Handle page events directly
+              if (data.type === "page" && data.data) {
+                setEvents(prev => [...prev, {
+                  type: "page",
+                  data: {
+                    url: data.data.url,
+                    title: data.data.title || 'Processed page',
+                    metrics: {
+                      relevance: data.data.metrics?.relevance || 0,
+                      informationDensity: data.data.metrics?.informationDensity || 0,
+                    },
+                    status: `Extracted content (${data.data.content.length} characters)`,
+                  }
+                }]);
+              }
+              
+              // Handle end event
+              if (data.type === "end") {
+                console.log("🏁 [Scraper UI] Received end event with results:", data.output);
+                
+                setEvents(prev => [...prev, {
+                  type: "end",
+                  output: data.output,
+                  friendly_title: "Scraping complete",
+                  friendly_message: `Successfully scraped ${data.output.summary.pagesScraped} pages`
+                }]);
+                
+                setResults(data.output);
+                setActiveTab("results");
+                setIsLoading(false);
+                setIsConnected(false);
+                eventSource.close();
+                
+                toast.success("Scraping Complete", {
+                  description: `Successfully scraped ${data.output.summary.pagesScraped} pages.`,
+                });
+              }
+              
+              // Handle error event
+              if (data.type === "error") {
+                setEvents(prev => [...prev, {
+                  type: "error",
+                  error: data.error || "Unknown error",
+                  friendly_title: "Error occurred",
+                  friendly_message: data.error || "An error occurred during scraping"
+                }]);
+                
+                toast.error("Scraping Error", {
+                  description: data.error || "An unknown error occurred",
+                });
+              }
+            } catch (error) {
+              console.error("Error parsing scraper event:", error);
             }
-          }
+          });
+        } catch (error) {
+          console.error("Error setting up EventSource:", error);
+          setEvents(prev => [...prev, {
+            type: "error",
+            error: "Failed to connect to scraper service",
+            friendly_title: "Connection failed",
+            friendly_message: "Could not establish connection to the scraper service"
+          }]);
+          setIsConnected(false);
+          setIsLoading(false);
+          toast.error("Connection Failed", {
+            description: "Could not connect to the scraper service",
+          });
         }
       } else {
         // Non-streaming API call
         console.log("🚀 [Scraper UI] Using non-streaming scraper endpoint");
+        
+        // Format data for non-recursive scraper API
+        const scraperRequest = {
+          baseUrl: scrapingConfig.baseUrl,
+          scrapingGoal: scrapingConfig.scrapingGoal,
+          maxPages: scrapingConfig.maxPages,
+          maxDepth: scrapingConfig.maxDepth,
+          includeImages: scrapingConfig.includeImages,
+          executeJavaScript: scrapingConfig.executeJavaScript,
+          preventDuplicateUrls: true,
+          filters: {
+            mustIncludePatterns,
+            excludePatterns
+          }
+        };
+        
         const response = await fetch("/api/scraper/non-recursive/sync", {
           method: "POST",
           headers: {
@@ -343,11 +401,11 @@ export default function ScraperPage() {
         setEvents([endEvent]);
         setResults(result);
         setActiveTab("results");
+        
+        toast.success("Scraping Complete", {
+          description: "Web scraping operation has finished successfully.",
+        });
       }
-
-      toast.success("Scraping Complete", {
-        description: "Web scraping operation has finished successfully.",
-      });
     } catch (error) {
       console.error("💥 [Scraper UI] Scraping error:", error);
       toast.error("Scraping Failed", {
@@ -522,6 +580,17 @@ export default function ScraperPage() {
                     initialState={isStreaming}
                     onToggle={setIsStreaming}
                   />
+                  {isLoading && (
+                    <div className="mt-2 flex items-center text-sm">
+                      <span className="mr-2">Connection status:</span>
+                      <span 
+                        className={`inline-block w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-yellow-500'}`}
+                      ></span>
+                      <span className="ml-1">
+                        {isConnected ? 'Connected' : 'Connecting...'}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -542,6 +611,19 @@ export default function ScraperPage() {
         </TabsContent>
 
         <TabsContent value="logs">
+          <div className="mb-2 flex justify-between items-center">
+            {isLoading && (
+              <div className="flex items-center text-sm">
+                <span className="mr-2">Connection status:</span>
+                <span 
+                  className={`inline-block w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-yellow-500'}`}
+                ></span>
+                <span className="ml-1">
+                  {isConnected ? 'Connected' : 'Connecting...'}
+                </span>
+              </div>
+            )}
+          </div>
           <ScraperEventsLog events={events} isLoading={isLoading} />
         </TabsContent>
 
