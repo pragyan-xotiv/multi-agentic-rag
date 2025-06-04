@@ -80,6 +80,11 @@ export function ScraperEventsLog({ events, isLoading }: ScraperEventsLogProps) {
             {event.data.links && event.data.links.length > 0 && (
               <p className="mt-1 text-xs text-muted-foreground">Found {event.data.links.length} links</p>
             )}
+            {event.data.metrics.contentQualityAnalysis && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Content Quality Analysis: {event.data.metrics.contentQualityAnalysis}
+              </p>
+            )}
           </div>
         );
         

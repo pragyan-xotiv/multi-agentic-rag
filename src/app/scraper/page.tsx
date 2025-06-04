@@ -280,6 +280,7 @@ export default function ScraperPage() {
               
               // Handle page events directly
               if (data.type === "page" && data.data) {
+                console.log("🔍 [Scraper UI] Received page event:", data);
                 setEvents(prev => [...prev, {
                   type: "page",
                   data: {
@@ -288,6 +289,8 @@ export default function ScraperPage() {
                     metrics: {
                       relevance: data.data.metrics?.relevance || 0,
                       informationDensity: data.data.metrics?.informationDensity || 0,
+                      contentQualityAnalysis: data.data.metrics?.contentQualityAnalysis || 'Unknown',
+                      uniqueness: data.data.metrics?.uniqueness || 0,
                     },
                     status: `Extracted content (${data.data.content.length} characters)`,
                   }
