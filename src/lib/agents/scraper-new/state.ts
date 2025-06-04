@@ -19,6 +19,7 @@ export const ScraperStateAnnotation = Annotation.Root({
   
   // Current state
   currentUrl: Annotation<string>(),
+  currentUrlDepth: Annotation<number>(),
   visitedUrls: Annotation<Set<string>>(),
   pageQueue: Annotation<PriorityQueue<UrlQueueItem>>(),
   
@@ -47,7 +48,12 @@ export const ScraperStateAnnotation = Annotation.Root({
   contentSignatures: Annotation<Set<string>>(),
   
   // Debug information
-  lastError: Annotation<string | null>()
+  lastError: Annotation<string | null>(),
+  
+  // Batch processing additions
+  discoveredUrls: Annotation<UrlQueueItem[]>(),
+  processingComplete: Annotation<boolean>(),
+  currentPageOutput: Annotation<PageContent | null>()
 }); 
 
 /**
@@ -68,6 +74,7 @@ export interface ExtendedScraperAgentState {
   
   // Current state
   currentUrl: string;
+  currentUrlDepth?: number;
   visitedUrls: Set<string>;
   pageQueue: PriorityQueue<UrlQueueItem>;
   
@@ -97,6 +104,11 @@ export interface ExtendedScraperAgentState {
   
   // Debug information
   lastError: string | null;
+  
+  // Batch processing additions
+  discoveredUrls?: UrlQueueItem[]; // URLs discovered during processing for the orchestrator
+  processingComplete?: boolean;     // Indicates if the current URL has been fully processed
+  currentPageOutput?: PageContent | null; // Output for the current page, used by orchestrator
   
   // Callback functions
   onPageProcessed?: (pageContent: PageContent) => Promise<void>;

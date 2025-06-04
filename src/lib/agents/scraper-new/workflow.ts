@@ -3,6 +3,8 @@
  * 
  * This implementation uses a simplified LangGraph workflow with clear termination conditions
  * to avoid recursion issues while maintaining all core functionality.
+ * 
+ * BATCH PROCESSING VERSION: Processes a single URL per workflow invocation
  */
 
 import { StateGraph, END, START } from '@langchain/langgraph';
@@ -21,93 +23,42 @@ import { fetchPage } from './core/browser-interface';
 // Import chains from the original implementation
 import { runContentExtractionChain } from '@/lib/chains/content-extraction-chain';
 import { runLinkDiscoveryChain } from '@/lib/chains/link-discovery-chain';
-import { runProgressEvaluationChain } from '@/lib/chains/progress-evaluation-chain';
 import { runAuthenticationDetectionChain } from '@/lib/chains/authentication-detection-chain';
 
 /**
- * Create a priority queue implementation
+ * Process URL Node - Processes the current URL (in batch mode)
+ * This is a modified version of the original processNextUrl function
+ * that does not dequeue the next URL, but instead processes the URL 
+ * that was passed in the state
  */
-function createPriorityQueue<T>() {
-  const items: { item: T; priority: number }[] = [];
+async function processUrl(state: ExtendedScraperAgentState) {
+  console.log(`🔍 [ProcessUrl] Processing URL: ${state.currentUrl} (depth: ${state.currentUrlDepth})`);
   
-  return {
-    enqueue: (item: T, priority: number) => {
-      // Add the item with its priority
-      items.push({ item, priority });
-      
-      // Sort the queue by priority (higher values have higher priority)
-      items.sort((a, b) => b.priority - a.priority);
-    },
-    
-    dequeue: () => {
-      // Remove and return the highest priority item
-      if (items.length === 0) return undefined;
-      return items.shift()?.item;
-    },
-    
-    peek: () => {
-      // Return the highest priority item without removing it
-      if (items.length === 0) return undefined;
-      return items[0].item;
-    },
-    
-    isEmpty: () => {
-      return items.length === 0;
-    },
-    
-    size: () => {
-      return items.length;
-    },
-    
-    get items() {
-      return items.map(i => i.item);
-    },
-  };
-}
-
-/**
- * Process Next URL Node - Selects the next URL from the queue
- */
-async function processNextUrl(state: ExtendedScraperAgentState) {
-  console.log(`🔍 [ProcessNextUrl] Selecting next URL from queue`);
-  
-  // Check for termination conditions
-  if (state.pageQueue.isEmpty()) {
-    console.log(`🏁 [ProcessNextUrl] No more URLs in queue, preparing to finish`);
+  // Ensure we have a URL to process
+  if (!state.currentUrl) {
+    console.log(`⚠️ [ProcessUrl] No URL to process, ending workflow`);
     state.finalOutput = prepareOutput(state);
     return state;
   }
-  
-  if (state.extractedContent.size >= state.maxPages) {
-    console.log(`🏁 [ProcessNextUrl] Reached maximum pages (${state.maxPages}), preparing to finish`);
-    state.finalOutput = prepareOutput(state);
-    return state;
-  }
-  
-  // Get the next URL from the queue
-  const nextItem = state.pageQueue.dequeue();
-  
-  if (!nextItem) {
-    console.log(`🏁 [ProcessNextUrl] No items in queue, preparing to finish`);
-    state.finalOutput = prepareOutput(state);
-    return state;
-  }
-  
-  // Set the current URL
-  state.currentUrl = nextItem.url;
-  
-  console.log(`➡️ [ProcessNextUrl] Selected next URL: ${state.currentUrl} (depth: ${nextItem.depth}, priority: ${nextItem.expectedValue.toFixed(2)})`);
   
   // Send event if configured
   if (state.onEvent) {
     await state.onEvent({
       type: 'workflow-status',
-      step: 'process-next-url',
+      step: 'process-url',
       progress: state.extractedContent.size / state.maxPages,
       message: `Processing URL: ${state.currentUrl}`
     });
+    
+    // Also send an analyze-url event for UI feedback
+    await state.onEvent({
+      type: 'analyze-url',
+      url: state.currentUrl,
+      depth: state.currentUrlDepth || 0
+    });
   }
   
+  console.log(`⏭️ [WorkflowTransition] processUrl → fetchPage`);
   return state;
 }
 
@@ -123,6 +74,9 @@ async function fetchPageContent(state: ExtendedScraperAgentState) {
   
   console.log(`🌐 [FetchPage] Fetching page: ${state.currentUrl}`);
   
+  // Mark this URL as visited to prevent re-processing
+  state.visitedUrls.add(state.currentUrl);
+  
   // Send event about starting page fetch
   if (state.onEvent) {
     await state.onEvent({
@@ -134,6 +88,7 @@ async function fetchPageContent(state: ExtendedScraperAgentState) {
   
   try {
     // Fetch the page content
+    console.log(`🕐 [FetchPage] Starting fetch with executeJavaScript=${state.executeJavaScript}`);
     const fetchResult = await fetchPage(state.currentUrl, {
       executeJavaScript: state.executeJavaScript
     });
@@ -146,7 +101,8 @@ async function fetchPageContent(state: ExtendedScraperAgentState) {
     state.currentPageText = dom.window.document.body?.textContent || '';
     
     console.log(`✅ [FetchPage] Page fetched: ${state.currentUrl} (status: ${fetchResult.status})`);
-    console.log(`📊 [FetchPage] Page size: ${fetchResult.html.length} bytes`);
+    console.log(`📊 [FetchPage] Page size: ${fetchResult.html.length} bytes, text length: ${state.currentPageText.length} chars`);
+    console.log(`⏭️ [WorkflowTransition] fetchPage → detectAuthentication`);
     
     // Send event about completed page fetch
     if (state.onEvent) {
@@ -191,6 +147,7 @@ async function detectAuthentication(state: ExtendedScraperAgentState) {
   
   if (!state.currentPageDOM) {
     console.log(`⚠️ [Authentication] No DOM content available to check authentication`);
+    console.log(`⏭️ [WorkflowTransition] detectAuthentication → extractContent (no DOM content)`);
     return {
       ...state,
       requiresAuthentication: false
@@ -209,6 +166,9 @@ async function detectAuthentication(state: ExtendedScraperAgentState) {
     
     if (authResult.authRequest) {
       console.log(`🔐 [Authentication] Auth form detected: ${authResult.authRequest.authType}`);
+      console.log(`⏭️ [WorkflowTransition] detectAuthentication → handleAuthentication`);
+    } else {
+      console.log(`⏭️ [WorkflowTransition] detectAuthentication → extractContent`);
     }
     
     return {
@@ -218,6 +178,7 @@ async function detectAuthentication(state: ExtendedScraperAgentState) {
     };
   } catch (error) {
     console.error(`❌ [Authentication] Error detecting authentication:`, error);
+    console.log(`⏭️ [WorkflowTransition] detectAuthentication → extractContent (error case)`);
     return {
       ...state,
       requiresAuthentication: false,
@@ -256,6 +217,8 @@ async function handleAuthentication(state: ExtendedScraperAgentState, options: {
     });
   }
   
+  console.log(`⏭️ [WorkflowTransition] handleAuthentication → fetchPage (retry after auth)`);
+  
   return {
     ...state,
     requiresAuthentication: false,
@@ -271,10 +234,20 @@ async function extractPageContent(state: ExtendedScraperAgentState) {
   
   if (!state.currentPageDOM || state.requiresAuthentication) {
     console.error(`❌ [ContentExtraction] Cannot extract content - ${!state.currentPageDOM ? 'No DOM content' : 'Authentication required'}`);
+    console.log(`⏭️ [WorkflowTransition] extractContent → discoverLinks (skipping extraction)`);
     return state;
   }
   
   try {
+    // Send event about starting content extraction
+    if (state.onEvent) {
+      await state.onEvent({
+        type: 'extract-content',
+        url: state.currentUrl,
+        contentType: 'text/html'
+      });
+    }
+    
     // Call the content extraction chain
     const contentResult = await runContentExtractionChain({
       html: state.currentPageDOM,
@@ -303,6 +276,7 @@ async function extractPageContent(state: ExtendedScraperAgentState) {
     updatedContent.set(state.currentUrl, pageContent);
     
     console.log(`📦 [ContentExtraction] Added content: title="${contentResult.title}", length=${contentResult.content.length} chars`);
+    console.log(`⏭️ [WorkflowTransition] extractContent → discoverLinks`);
     
     // Call the onPageProcessed callback if provided
     if (state.onPageProcessed) {
@@ -327,6 +301,7 @@ async function extractPageContent(state: ExtendedScraperAgentState) {
     };
   } catch (error) {
     console.error(`❌ [ContentExtraction] Error extracting content:`, error);
+    console.log(`⏭️ [WorkflowTransition] extractContent → discoverLinks (error case)`);
     return state;
   }
 }
@@ -339,6 +314,7 @@ async function discoverLinks(state: ExtendedScraperAgentState) {
   
   if (!state.currentPageDOM || state.requiresAuthentication) {
     console.error(`❌ [LinkDiscovery] Cannot discover links - ${!state.currentPageDOM ? 'No DOM content' : 'Authentication required'}`);
+    console.log(`⏭️ [WorkflowTransition] discoverLinks → queueDiscovery (skipping discovery)`);
     return state;
   }
   
@@ -367,7 +343,18 @@ async function discoverLinks(state: ExtendedScraperAgentState) {
       
       contentCopy.set(state.currentUrl, pageContent);
       console.log(`📝 [LinkDiscovery] Updated page content with ${pageContent.links.length} links`);
+      
+      // Send event about discovered links
+      if (state.onEvent) {
+        await state.onEvent({
+          type: 'discover-links',
+          url: state.currentUrl,
+          linkCount: pageContent.links.length
+        });
+      }
     }
+    
+    console.log(`⏭️ [WorkflowTransition] discoverLinks → queueDiscovery`);
     
     return {
       ...state,
@@ -375,126 +362,131 @@ async function discoverLinks(state: ExtendedScraperAgentState) {
     };
   } catch (error) {
     console.error(`❌ [LinkDiscovery] Error discovering links:`, error);
+    console.log(`⏭️ [WorkflowTransition] discoverLinks → queueDiscovery (error case)`);
     return state;
   }
 }
 
 /**
- * Queue Manager Node - Manages the URL queue
+ * Queue Discovery Node - Discovers and prepares links for external queue management
+ * This is a modified version of the original queueManager function
+ * that collects links but doesn't handle the queue directly
  */
-async function queueManager(state: ExtendedScraperAgentState) {
-  console.log(`🔄 [QueueManager] Managing URL queue with ${state.pageQueue.size()} URLs`);
+async function queueDiscovery(state: ExtendedScraperAgentState) {
+  console.log(`🔄 [QueueDiscovery] Discovering links for external queue management`);
   
-  // Mark current URL as visited
-  if (state.currentUrl) {
-    state.visitedUrls.add(state.currentUrl);
-    console.log(`✓ [QueueManager] Marked ${state.currentUrl} as visited (total: ${state.visitedUrls.size})`);
-  }
+  // Get the current page content
+  const currentPageContent = state.extractedContent.get(state.currentUrl);
   
-  // Get the current extracted content count
-  const currentExtractedCount = state.extractedContent.size;
-  
-  // Check if we've hit the page limit
-  if (currentExtractedCount >= state.maxPages) {
-    console.log(`🏁 [QueueManager] Reached maximum pages (${state.maxPages}), preparing to finish`);
-    state.finalOutput = prepareOutput(state);
+  if (!currentPageContent || !state.currentUrl) {
+    console.log(`⚠️ [QueueDiscovery] No page content or current URL available`);
+    state.discoveredUrls = [];
+    
+    // Go to finalize node
+    console.log(`⏭️ [WorkflowTransition] queueDiscovery → finalizeProcessing`);
     return state;
   }
   
-  // Get the current depth from the current URL
-  const currentPageContent = state.extractedContent.get(state.currentUrl);
-  if (currentPageContent && state.currentUrl) {
-    // Find current depth by checking the queue
-    const currentDepth = Array.from(state.pageQueue.items)
-      .find(item => item.url === state.currentUrl)?.depth || 0;
+  // Use currentUrlDepth to determine if we can add more URLs
+  const currentDepth = state.currentUrlDepth || 0;
+  
+  if (currentDepth >= state.maxDepth) {
+    console.log(`🛑 [QueueDiscovery] At max depth (${currentDepth}), not adding more URLs`);
+    state.discoveredUrls = [];
     
-    // Check if we can add more URLs (depth limit)
-    if (currentDepth < state.maxDepth) {
-      // Add discovered links to the queue
-      let newLinksAdded = 0;
-      
-      for (const link of currentPageContent.links) {
-        // Skip already visited URLs
-        if (state.visitedUrls.has(link.url)) {
-          continue;
-        }
-        
-        // Apply filters if provided
-        let shouldEnqueue = true;
-        
-        // Check for must-include patterns
-        if (state.filters.mustIncludePatterns && state.filters.mustIncludePatterns.length > 0) {
-          shouldEnqueue = state.filters.mustIncludePatterns.some(pattern => 
-            link.url.includes(pattern) || link.context.includes(pattern)
-          );
-        }
-        
-        // Check for exclude patterns
-        if (shouldEnqueue && state.filters.excludePatterns && state.filters.excludePatterns.length > 0) {
-          shouldEnqueue = !state.filters.excludePatterns.some(pattern => 
-            link.url.includes(pattern)
-          );
-        }
-        
-        if (shouldEnqueue) {
-          // Add to queue with priority based on predicted value
-          state.pageQueue.enqueue(
-            { 
-              url: link.url, 
-              depth: currentDepth + 1, 
-              expectedValue: link.predictedValue 
-            },
-            link.predictedValue
-          );
-          newLinksAdded++;
-        }
-      }
-      
-      console.log(`🔗 [QueueManager] Added ${newLinksAdded} new links to the queue`);
-    } else {
-      console.log(`🛑 [QueueManager] Reached maximum depth (${state.maxDepth}), not adding new links`);
+    // Go to finalize node
+    console.log(`⏭️ [WorkflowTransition] queueDiscovery → finalizeProcessing`);
+    return state;
+  }
+  
+  // Prepare a list of discovered URLs for the external orchestrator
+  const discoveredUrls: UrlQueueItem[] = [];
+  
+  for (const link of currentPageContent.links) {
+    // Skip already visited URLs
+    if (state.visitedUrls.has(link.url)) {
+      continue;
+    }
+    
+    // Apply filters if provided
+    let shouldEnqueue = true;
+    
+    // Check for must-include patterns
+    if (state.filters.mustIncludePatterns && state.filters.mustIncludePatterns.length > 0) {
+      shouldEnqueue = state.filters.mustIncludePatterns.some(pattern => 
+        link.url.toLowerCase().includes(pattern.toLowerCase())
+      );
+    }
+    
+    // If passed must-include check, now check exclude patterns
+    if (shouldEnqueue && state.filters.excludePatterns && state.filters.excludePatterns.length > 0) {
+      shouldEnqueue = !state.filters.excludePatterns.some(pattern => 
+        link.url.toLowerCase().includes(pattern.toLowerCase())
+      );
+    }
+    
+    if (shouldEnqueue) {
+      // Add the link to the discovered URLs list
+      discoveredUrls.push({
+        url: link.url,
+        depth: currentDepth + 1,
+        expectedValue: link.predictedValue
+      });
     }
   }
   
-  // Log queue status
-  console.log(`📊 [QueueManager] Current queue status: ${state.pageQueue.size()} URLs remaining`);
-  console.log(`📊 [QueueManager] Extracted ${currentExtractedCount}/${state.maxPages} pages so far`);
+  console.log(`📈 [QueueDiscovery] Discovered ${discoveredUrls.length} new URLs for external queue`);
   
-  // Update progress metrics using the chain
-  try {
-    const progressResult = await runProgressEvaluationChain({
-      currentState: state
-    });
-    
-    state.valueMetrics = progressResult.metrics;
-    console.log(`📈 [QueueManager] Progress metrics updated: completeness=${progressResult.metrics.completeness.toFixed(2)}`);
-  } catch (error) {
-    console.error(`❌ [QueueManager] Error evaluating progress:`, error);
-  }
+  // Store discovered URLs in state for the orchestrator to use
+  state.discoveredUrls = discoveredUrls;
   
-  // Send event if configured
+  // Send queue status event
   if (state.onEvent) {
     await state.onEvent({
-      type: 'workflow-status',
-      step: 'queue-manager',
-      progress: currentExtractedCount / state.maxPages,
-      message: `Processed ${currentExtractedCount} pages, ${state.pageQueue.size()} URLs in queue`
-    });
-    
-    // Also send progress evaluation event
-    await state.onEvent({
       type: 'evaluate-progress',
-      pagesScraped: currentExtractedCount,
-      queueSize: state.pageQueue.size(),
-      goalCompletion: state.valueMetrics.completeness
+      pagesScraped: state.extractedContent.size,
+      queueSize: discoveredUrls.length, // This is just the newly discovered URLs
+      goalCompletion: Math.min(state.extractedContent.size / state.maxPages, 1.0)
     });
   }
   
+  console.log(`⏭️ [WorkflowTransition] queueDiscovery → finalizeProcessing`);
   return state;
 }
 
 /**
- * Prepare the final output
+ * Finalize Processing Node - Completes the processing of a single URL
+ * This is a new node that prepares the state for returning to the orchestrator
+ */
+async function finalizeProcessing(state: ExtendedScraperAgentState) {
+  console.log(`🏁 [Finalize] Completing single URL processing for: ${state.currentUrl}`);
+  
+  // Mark processing as complete for this URL
+  state.processingComplete = true;
+  
+  // Prepare a partial output just for this URL
+  const currentPageContent = state.extractedContent.get(state.currentUrl);
+  if (currentPageContent) {
+    state.currentPageOutput = currentPageContent;
+    console.log(`📦 [Finalize] Prepared output for ${state.currentUrl}`);
+  }
+  
+  // Send completion event
+  if (state.onEvent) {
+    await state.onEvent({
+      type: 'workflow-status',
+      step: 'url-complete',
+      progress: state.extractedContent.size / state.maxPages,
+      message: `Completed processing for ${state.currentUrl}`
+    });
+  }
+  
+  console.log(`✅ [Finalize] URL processing complete`);
+  return state;
+}
+
+/**
+ * Prepare the final output - Used by the orchestrator to combine results
  */
 function prepareOutput(state: ExtendedScraperAgentState): ScraperOutput {
   console.log(`🔧 [Workflow] Preparing final output from state with ${state.extractedContent.size} pages`);
@@ -537,7 +529,8 @@ function prepareOutput(state: ExtendedScraperAgentState): ScraperOutput {
 }
 
 /**
- * Create the scraper workflow with a simplified LangGraph structure
+ * Create the scraper workflow with a batch-oriented LangGraph structure
+ * This version processes a single URL and then terminates
  */
 export function createScraperWorkflow(options: {
   onAuthRequired?: (authRequest: HumanAuthRequest) => Promise<boolean>;
@@ -547,30 +540,18 @@ export function createScraperWorkflow(options: {
   // Create a StateGraph with the annotation-based state structure
   const workflow = new StateGraph(ScraperStateAnnotation)
     // Add nodes for each step
-    .addNode("processNextUrl", processNextUrl)
+    .addNode("processUrl", processUrl)
     .addNode("fetchPage", fetchPageContent)
     .addNode("detectAuthentication", detectAuthentication)
     .addNode("handleAuthentication", (state) => handleAuthentication(state, options))
     .addNode("extractContent", extractPageContent)
     .addNode("discoverLinks", discoverLinks)
-    .addNode("queueManager", queueManager);
+    .addNode("queueDiscovery", queueDiscovery)
+    .addNode("finalizeProcessing", finalizeProcessing);
   
-  // Define a linear flow
-  workflow.addEdge(START, "processNextUrl");
-  
-  // From processNextUrl, either terminate or fetch the page
-  workflow.addConditionalEdges(
-    "processNextUrl",
-    (state) => {
-      // If no more URLs or reached max pages, end the workflow
-      if (state.pageQueue.isEmpty() || state.extractedContent.size >= state.maxPages) {
-        return END;
-      }
-      return "fetchPage";
-    }
-  );
-  
-  // Standard page processing flow
+  // Define a linear flow for single URL processing
+  workflow.addEdge(START, "processUrl");
+  workflow.addEdge("processUrl", "fetchPage");
   workflow.addEdge("fetchPage", "detectAuthentication");
   
   // Handle authentication if needed
@@ -584,46 +565,30 @@ export function createScraperWorkflow(options: {
   
   // Linear content processing
   workflow.addEdge("extractContent", "discoverLinks");
-  workflow.addEdge("discoverLinks", "queueManager");
+  workflow.addEdge("discoverLinks", "queueDiscovery");
   
-  // Always go back to process the next URL, creating a loop
-  // that will terminate via the conditional edge from processNextUrl
-  workflow.addEdge("queueManager", "processNextUrl");
+  // After queue discovery, finalize processing
+  workflow.addEdge("queueDiscovery", "finalizeProcessing");
+  
+  // Always terminate after finalizing (no looping back)
+  workflow.addEdge("finalizeProcessing", END);
   
   return workflow.compile();
 }
 
 /**
- * Execute the scraper workflow
+ * Process a single URL using the workflow
+ * This is a utility function that will be called by the orchestrator
  */
-export async function executeScraperWorkflow(options: {
-  baseUrl: string;
-  scrapingGoal: string;
-  maxPages: number;
-  maxDepth: number;
-  includeImages: boolean;
-  executeJavaScript?: boolean;
-  preventDuplicateUrls?: boolean;
-  filters: {
-    mustIncludePatterns?: string[];
-    excludePatterns?: string[];
-  };
+export async function processSingleUrl(options: {
+  url: string;
+  depth: number;
+  state: Partial<ExtendedScraperAgentState>;
   onAuthRequired?: (authRequest: HumanAuthRequest) => Promise<boolean>;
   onPageProcessed?: (pageContent: PageContent) => Promise<void>;
   onEvent?: (event: ScraperStreamEvent) => Promise<void>;
-}): Promise<ScraperOutput> {
-  console.log(`🚀 [ScraperWorkflow] Starting workflow with baseUrl=${options.baseUrl}`);
-  console.log(`📋 [ScraperWorkflow] Options:`, {
-    scrapingGoal: options.scrapingGoal,
-    maxPages: options.maxPages,
-    maxDepth: options.maxDepth,
-    includeImages: options.includeImages,
-    executeJavaScript: options.executeJavaScript,
-    preventDuplicateUrls: options.preventDuplicateUrls,
-    filters: options.filters
-  });
-  
-  console.time('TotalScrapingOperation');
+}): Promise<ExtendedScraperAgentState> {
+  console.log(`🚀 [SingleUrlProcessor] Processing URL: ${options.url} (depth: ${options.depth})`);
   
   try {
     // Create the workflow
@@ -633,123 +598,26 @@ export async function executeScraperWorkflow(options: {
       onEvent: options.onEvent,
     });
     
-    // Initialize the state
+    // Initialize the minimal state needed for processing this URL
     const initialState: ExtendedScraperAgentState = {
-      baseUrl: options.baseUrl,
-      scrapingGoal: options.scrapingGoal,
-      maxPages: options.maxPages,
-      maxDepth: options.maxDepth,
-      includeImages: options.includeImages || false,
-      executeJavaScript: options.executeJavaScript,
-      filters: options.filters || {},
-      
-      currentUrl: "",
-      visitedUrls: new Set<string>(),
-      pageQueue: createPriorityQueue<UrlQueueItem>(),
-      
-      currentPageDOM: "",
-      currentPageText: "",
-      extractedContent: new Map(),
-      
-      valueMetrics: {
-        informationDensity: 0,
-        relevance: 0,
-        uniqueness: 0,
-        completeness: 0
-      },
-      
-      requiresAuthentication: false,
-      authRequest: null,
-      
-      finalOutput: {
-        pages: [],
-        summary: {
-          pagesScraped: 0,
-          totalContentSize: 0,
-          executionTime: 0,
-          goalCompletion: 0,
-          coverageScore: 0
-        }
-      },
-      
-      normalizedUrls: new Set<string>(),
-      contentSignatures: new Set<string>(),
-      lastError: null,
-      
-      onPageProcessed: options.onPageProcessed,
-      onEvent: options.onEvent,
-      onAuthRequired: options.onAuthRequired
+      ...(options.state as ExtendedScraperAgentState),
+      currentUrl: options.url,
+      currentUrlDepth: options.depth,
+      discoveredUrls: [],
+      processingComplete: false,
+      currentPageOutput: null
     };
     
-    // Add the starting URL to the queue with highest priority
-    initialState.pageQueue.enqueue({
-      url: options.baseUrl,
-      depth: 0,
-      expectedValue: 1.0
-    }, 1.0);
+    // Execute the workflow for a single URL
+    console.log(`⚙️ [SingleUrlProcessor] Executing workflow for ${options.url}`);
     
-    // Send the start event if needed
-    if (options.onEvent) {
-      await options.onEvent({
-        type: 'start',
-        url: options.baseUrl,
-        goal: options.scrapingGoal
-      });
-    }
-    
-    const startTime = Date.now();
-    
-    // Execute the workflow
-    console.log(`⚙️ [ScraperWorkflow] Executing workflow...`);
     const result = await workflow.invoke(initialState);
     
-    const endTime = Date.now();
-    const executionTime = endTime - startTime;
+    console.log(`✅ [SingleUrlProcessor] Completed processing URL: ${options.url}`);
     
-    // Ensure we have a valid result
-    if (!result.finalOutput || !result.finalOutput.pages) {
-      console.warn(`⚠️ [ScraperWorkflow] Missing final output, generating from state`);
-      result.finalOutput = prepareOutput(result);
-    }
-    
-    // Update execution time
-    result.finalOutput.summary.executionTime = executionTime;
-    
-    console.log(`🏁 [ScraperWorkflow] Workflow completed in ${executionTime}ms`);
-    console.log(`📊 [ScraperWorkflow] Pages scraped: ${result.finalOutput.pages.length}`);
-    
-    // Send the end event if needed
-    if (options.onEvent) {
-      await options.onEvent({
-        type: 'end',
-        output: result.finalOutput
-      });
-    }
-    
-    console.timeEnd('TotalScrapingOperation');
-    
-    return result.finalOutput;
+    return result;
   } catch (error) {
-    console.timeEnd('TotalScrapingOperation');
-    console.error(`❌ [ScraperWorkflow] Error executing workflow:`, error);
-    
-    // Send error event if needed
-    if (options.onEvent) {
-      await options.onEvent({
-        type: 'error',
-        error: error instanceof Error ? error.message : String(error)
-      });
-    }
-    
-    return {
-      pages: [],
-      summary: {
-        pagesScraped: 0,
-        totalContentSize: 0,
-        executionTime: 0,
-        goalCompletion: 0,
-        coverageScore: 0
-      }
-    };
+    console.error(`❌ [SingleUrlProcessor] Error processing URL ${options.url}:`, error);
+    throw error;
   }
 } 

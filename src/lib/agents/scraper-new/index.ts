@@ -2,10 +2,11 @@
  * Non-Recursive Scraper Agent Implementation
  * 
  * This implementation provides the same API as the original scraper agent
- * but uses a simplified, non-recursive workflow internally.
+ * but uses a batch-oriented workflow with an external orchestrator to avoid
+ * recursion issues while maintaining all core functionality.
  */
 
-import { executeScraperWorkflow } from './workflow';
+import { ScraperOrchestrator } from './orchestrator';
 import { 
   ScraperOutput, 
   ScraperOptions, 
@@ -14,7 +15,7 @@ import {
 } from './types';
 
 /**
- * Non-recursive Scraper Agent for intelligently extracting content from websites
+ * Batch-oriented Scraper Agent for intelligently extracting content from websites
  */
 export class ScraperAgent {
   private authConfig?: AuthenticationConfig;
@@ -33,7 +34,8 @@ export class ScraperAgent {
     console.log(`⚙️ [ScraperAgent] Config: maxPages=${options.maxPages || 20}, maxDepth=${options.maxDepth || 3}, executeJS=${options.executeJavaScript ? 'Yes' : 'No'}, preventDuplicates=${options.preventDuplicateUrls ? 'Yes' : 'No'}`);
     
     try {
-      const result = await executeScraperWorkflow({
+      // Create orchestrator with options
+      const orchestrator = new ScraperOrchestrator({
         baseUrl: options.baseUrl,
         scrapingGoal: options.scrapingGoal,
         maxPages: options.maxPages || 20,
@@ -46,6 +48,11 @@ export class ScraperAgent {
         onPageProcessed: options.onPageProcessed,
         onEvent: options.onEvent
       });
+      
+      // Execute the orchestrator to completion with configurable batch size
+      const batchSize = options.batchSize || 5;
+      console.log(`🔄 [ScraperAgent] Using batch size: ${batchSize}`);
+      const result = await orchestrator.execute(batchSize);
       
       console.log(`✅ [ScraperAgent] Scraping completed successfully`);
       console.log(`📊 [ScraperAgent] Pages scraped: ${result.summary.pagesScraped}`);
@@ -77,8 +84,8 @@ export class ScraperAgent {
         goal: options.scrapingGoal
       });
       
-      // Execute the workflow with the onEvent callback
-      const result = await executeScraperWorkflow({
+      // Create orchestrator with the onEvent callback
+      const orchestrator = new ScraperOrchestrator({
         baseUrl: options.baseUrl,
         scrapingGoal: options.scrapingGoal,
         maxPages: options.maxPages || 20,
@@ -91,6 +98,11 @@ export class ScraperAgent {
         onPageProcessed: options.onPageProcessed,
         onEvent
       });
+      
+      // Execute the orchestrator to completion with configurable batch size
+      const batchSize = options.batchSize || 3; // Use smaller default batch size for streaming
+      console.log(`🔄 [ScraperAgent] Using batch size: ${batchSize}`);
+      const result = await orchestrator.execute(batchSize);
       
       // Send the end event
       console.log(`🏁 [ScraperAgent] Scraping completed, sending 'end' event`);
@@ -117,5 +129,6 @@ export class ScraperAgent {
 // Export types
 export * from './types';
 
-// Export workflow functions for direct access
+// Export orchestrator and workflow functions for direct access
+export * from './orchestrator';
 export * from './workflow'; 

@@ -115,6 +115,7 @@ export interface ScraperOptions {
   onAuthRequired?: (authRequest: HumanAuthRequest) => Promise<boolean>;
   onPageProcessed?: (pageContent: PageContent) => Promise<void>;
   onEvent?: (event: ScraperStreamEvent) => Promise<void>;
+  batchSize?: number;
 }
 
 /**
@@ -133,7 +134,14 @@ export type ScraperStreamEvent =
   | { type: 'discover-links'; url: string; linkCount: number }
   | { type: 'evaluate-progress'; pagesScraped: number; queueSize: number; goalCompletion: number }
   | { type: 'decide-next-action'; decision: 'continue' | 'stop' | 'change-strategy'; reason: string }
-  | { type: 'workflow-status'; step: string; progress: number; message: string };
+  | { type: 'workflow-status'; step: string; progress: number; message: string; batchStats?: {
+      processedInBatch: number;
+      totalProcessed: number;
+      queueRemaining: number;
+      extractedTotal: number;
+      batchDuration: number;
+      isComplete: boolean;
+    } };
 
 /**
  * Result from fetching a page
