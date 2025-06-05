@@ -3,8 +3,8 @@ import { PromptTemplate } from "@langchain/core/prompts";
 import { ChatOpenAI } from "@langchain/openai";
 import { StructuredOutputParser } from "@langchain/core/output_parsers";
 import { z } from "zod";
-import { identifyLinks } from "../../agents/scraper/core/link-prioritizer";
-import type { ScraperAgentState } from "../../agents/scraper/types";
+import { identifyLinks } from "../../agents/scraper-new/core/link-prioritizer";
+import type { ExtendedScraperAgentState } from "../../agents/scraper-new/state";
 
 // Define link interface
 interface LinkInfo {
@@ -18,7 +18,7 @@ interface LinkInfo {
 export interface LinkDiscoveryInput {
   html: string;
   currentUrl: string;
-  currentState: ScraperAgentState;
+  currentState: ExtendedScraperAgentState;
 }
 
 // Define output interface

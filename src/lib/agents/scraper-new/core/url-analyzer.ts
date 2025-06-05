@@ -7,7 +7,7 @@
  */
 
 import { URL } from 'url';
-import type { ScraperAgentState } from '../types';
+import type { ExtendedScraperAgentState } from '../state';
 
 interface UrlAnalysisResult {
   url: string;
@@ -23,7 +23,7 @@ interface UrlAnalysisResult {
  */
 export async function analyzeUrl(
   url: string,
-  state: ScraperAgentState,
+  state: ExtendedScraperAgentState,
 ): Promise<UrlAnalysisResult> {
   // Parse the URL to get components
   const parsedUrl = new URL(url);

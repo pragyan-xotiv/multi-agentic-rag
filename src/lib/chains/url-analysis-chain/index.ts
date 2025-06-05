@@ -3,14 +3,14 @@ import { PromptTemplate } from "@langchain/core/prompts";
 import { ChatOpenAI } from "@langchain/openai";
 import { StructuredOutputParser } from "@langchain/core/output_parsers";
 import { z } from "zod";
-import { analyzeUrl } from "../../agents/scraper/core/url-analyzer";
-import type { ScraperAgentState } from "../../agents/scraper/types";
+import { analyzeUrl } from "../../agents/scraper-new/core/url-analyzer";
+import type { ExtendedScraperAgentState } from "../../agents/scraper-new/state";
 
 // Define input interface
 export interface URLAnalysisInput {
   url: string;
   scrapingGoal: string;
-  currentState: ScraperAgentState;
+  currentState: ExtendedScraperAgentState;
 }
 
 // Define output interface

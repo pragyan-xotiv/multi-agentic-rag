@@ -3,12 +3,12 @@ import { PromptTemplate } from "@langchain/core/prompts";
 import { ChatOpenAI } from "@langchain/openai";
 import { StructuredOutputParser } from "@langchain/core/output_parsers";
 import { z } from "zod";
-import { decideNextAction } from "../../agents/scraper/core/navigation-decision";
-import type { ScraperAgentState } from "../../agents/scraper/types";
+import { decideNextAction } from "../../agents/scraper-new/core/navigation-decision";
+import type { ExtendedScraperAgentState } from "../../agents/scraper-new/state";
 
 // Define input interface
 export interface NavigationDecisionInput {
-  currentState: ScraperAgentState;
+  currentState: ExtendedScraperAgentState;
   progressMetrics: {
     informationDensity: number;
     relevance: number;

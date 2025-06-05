@@ -5,7 +5,7 @@
  * focusing on high-value elements while ignoring navigation, ads, etc.
  */
 
-import type { ScraperAgentState } from '../types';
+import type { ExtendedScraperAgentState } from '../state';
 import { JSDOM } from 'jsdom';
 
 interface ExtractionResult {
@@ -25,7 +25,7 @@ interface ExtractionResult {
 export async function extractContent(
   html: string,
   url: string,
-  state: ScraperAgentState
+  state: ExtendedScraperAgentState
 ): Promise<ExtractionResult> {
   const startTime = Date.now();
   console.log(`🔍 [ContentExtractor] Starting content extraction for ${url}`);
@@ -252,7 +252,7 @@ function cleanHtml(html: string): string {
  */
 function calculateContentMetrics(
   content: string,
-  state: ScraperAgentState
+  state: ExtendedScraperAgentState
 ): {
   informationDensity: number;
   relevance: number;
@@ -353,7 +353,7 @@ function calculateRelevance(content: string, scrapingGoal: string): number {
 /**
  * Calculate how unique this content is compared to already extracted content
  */
-function calculateUniqueness(content: string, state: ScraperAgentState): number {
+function calculateUniqueness(content: string, state: ExtendedScraperAgentState): number {
   // In a real implementation, this would use techniques like:
   // - Jaccard similarity
   // - Cosine similarity of embeddings

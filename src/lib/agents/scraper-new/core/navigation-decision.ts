@@ -7,7 +7,7 @@
  * - Whether to adjust scraping parameters based on findings
  */
 
-import type { ScraperAgentState } from '../types';
+import type { ExtendedScraperAgentState } from '../state';
 
 interface NavigationDecision {
   action: 'continue' | 'complete';
@@ -27,7 +27,7 @@ interface ProgressMetrics {
  * Evaluate scraping progress and decide next action
  */
 export async function evaluateProgress(
-  state: ScraperAgentState
+  state: ExtendedScraperAgentState
 ): Promise<ProgressMetrics> {
   // Calculate the information density across all scraped content
   const informationDensity = calculateInformationDensity(state);
@@ -56,7 +56,7 @@ export async function evaluateProgress(
  * Decide the next action based on the current state and progress metrics
  */
 export async function decideNextAction(
-  state: ScraperAgentState
+  state: ExtendedScraperAgentState
 ): Promise<NavigationDecision> {
   // Check if we've reached the maximum number of pages
   if (state.extractedContent.size >= state.maxPages) {
@@ -120,7 +120,7 @@ export async function decideNextAction(
 /**
  * Calculate the information density across all scraped content
  */
-function calculateInformationDensity(state: ScraperAgentState): number {
+function calculateInformationDensity(state: ExtendedScraperAgentState): number {
   if (state.extractedContent.size === 0) {
     return 0;
   }
@@ -138,7 +138,7 @@ function calculateInformationDensity(state: ScraperAgentState): number {
 /**
  * Calculate the relevance of scraped content to the goal
  */
-function calculateRelevance(state: ScraperAgentState): number {
+function calculateRelevance(state: ExtendedScraperAgentState): number {
   if (state.extractedContent.size === 0) {
     return 0;
   }
@@ -156,7 +156,7 @@ function calculateRelevance(state: ScraperAgentState): number {
 /**
  * Calculate the uniqueness of the information gathered
  */
-function calculateUniqueness(state: ScraperAgentState): number {
+function calculateUniqueness(state: ExtendedScraperAgentState): number {
   if (state.extractedContent.size <= 1) {
     return 1; // First page is always fully unique
   }
@@ -174,7 +174,7 @@ function calculateUniqueness(state: ScraperAgentState): number {
 /**
  * Estimate the completeness of information relative to the goal
  */
-function calculateCompleteness(state: ScraperAgentState): number {
+function calculateCompleteness(state: ExtendedScraperAgentState): number {
   // This is a complex estimation that would depend on various factors:
   // 1. The specificity of the goal
   // 2. The amount and quality of information gathered

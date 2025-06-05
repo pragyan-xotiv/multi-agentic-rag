@@ -6,7 +6,7 @@
  */
 
 import { URL } from 'url';
-import type { ScraperAgentState } from '../types';
+import type { ExtendedScraperAgentState } from '../state';
 
 interface LinkInfo {
   url: string;
@@ -21,7 +21,7 @@ interface LinkInfo {
 export async function identifyLinks(
   html: string,
   currentUrl: string,
-  state: ScraperAgentState
+  state: ExtendedScraperAgentState
 ): Promise<LinkInfo[]> {
   console.log(`🔍 [LinkPrioritizer] Starting link identification for ${currentUrl}`);
   console.log(`📊 [LinkPrioritizer] HTML length: ${html.length} bytes`);
@@ -141,7 +141,7 @@ function extractLinks(html: string, baseUrl: string): LinkInfo[] {
 function filterLinks(
   links: LinkInfo[],
   currentUrl: string,
-  state: ScraperAgentState
+  state: ExtendedScraperAgentState
 ): LinkInfo[] {
   console.log(`🧹 [LinkPrioritizer] Filtering ${links.length} links...`);
   
@@ -212,7 +212,7 @@ function filterLinks(
  */
 function analyzeLinks(
   links: LinkInfo[],
-  state: ScraperAgentState
+  state: ExtendedScraperAgentState
 ): LinkInfo[] {
   return links.map(link => {
     // Calculate a predicted value score for this link
@@ -228,7 +228,7 @@ function analyzeLinks(
 /**
  * Calculate the predicted value of a link
  */
-function calculateLinkValue(link: LinkInfo, state: ScraperAgentState): number {
+function calculateLinkValue(link: LinkInfo, state: ExtendedScraperAgentState): number {
   let score = 0.5; // Start with a neutral score
   
   // Factor 1: Link text relevance to scraping goal

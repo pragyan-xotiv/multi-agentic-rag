@@ -3,14 +3,15 @@ import { PromptTemplate } from "@langchain/core/prompts";
 import { ChatOpenAI } from "@langchain/openai";
 import { StructuredOutputParser } from "@langchain/core/output_parsers";
 import { z } from "zod";
-import { extractContent } from "../../agents/scraper/core/content-extractor";
-import type { ScraperAgentState, PageContent } from "../../agents/scraper/types";
+import { extractContent } from "../../agents/scraper-new/core/content-extractor";
+import type { PageContent } from "../../agents/scraper-new/types";
+import type { ExtendedScraperAgentState } from "../../agents/scraper-new/state";
 
 // Define input interface
 export interface ContentExtractionInput {
   html: string;
   url: string;
-  currentState: ScraperAgentState;
+  currentState: ExtendedScraperAgentState;
 }
 
 // Define output interface
@@ -203,7 +204,7 @@ export async function runContentExtractionChain(
 /**
  * Helper function to summarize previously collected topics
  */
-function getPreviousTopicsSummary(state: ScraperAgentState): string {
+function getPreviousTopicsSummary(state: ExtendedScraperAgentState): string {
   if (!state.extractedContent || state.extractedContent.size === 0) {
     return "No previous content has been collected yet.";
   }

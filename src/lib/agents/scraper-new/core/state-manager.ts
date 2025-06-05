@@ -6,12 +6,13 @@
  * updating state during scraping, and formatting the final output.
  */
 
-import type { ScraperAgentState, PageContent, ScraperOutput } from '../types';
+import type { ExtendedScraperAgentState } from '../state';
+import type { PageContent, ScraperOutput, PriorityQueue, UrlQueueItem } from '../types';
 
 /**
  * Create a priority queue implementation
  */
-function createPriorityQueue<T>() {
+function createPriorityQueue<T>(): PriorityQueue<T> {
   const items: { item: T; priority: number }[] = [];
   
   return {
@@ -55,12 +56,14 @@ export function initializeState(config: {
   scrapingGoal: string;
   maxPages?: number;
   maxDepth?: number;
-}): ScraperAgentState {
-  const pageQueue = createPriorityQueue<{
-    url: string;
-    expectedValue: number;
-    depth: number;
-  }>();
+  includeImages?: boolean;
+  executeJavaScript?: boolean;
+  filters?: {
+    mustIncludePatterns?: string[];
+    excludePatterns?: string[];
+  };
+}): ExtendedScraperAgentState {
+  const pageQueue = createPriorityQueue<UrlQueueItem>();
   
   // Add the initial URL to the queue with a neutral expected value
   pageQueue.enqueue(
@@ -76,8 +79,13 @@ export function initializeState(config: {
     baseUrl: config.baseUrl,
     scrapingGoal: config.scrapingGoal,
     maxPages: config.maxPages || 20,
+    maxDepth: config.maxDepth || 5,
+    includeImages: config.includeImages || false,
+    executeJavaScript: config.executeJavaScript || false,
+    filters: config.filters || {},
     
     currentUrl: '',
+    currentUrlDepth: 0,
     visitedUrls: new Set<string>(),
     pageQueue,
     
@@ -91,6 +99,14 @@ export function initializeState(config: {
       uniqueness: 0,
       completeness: 0
     },
+    
+    requiresAuthentication: false,
+    authRequest: null,
+    
+    normalizedUrls: new Set<string>(),
+    contentSignatures: new Set<string>(),
+    
+    lastError: null,
     
     finalOutput: {
       pages: [],
@@ -109,10 +125,10 @@ export function initializeState(config: {
  * Update the state with a new page content
  */
 export function addPageToState(
-  state: ScraperAgentState,
+  state: ExtendedScraperAgentState,
   url: string,
   pageContent: PageContent
-): ScraperAgentState {
+): ExtendedScraperAgentState {
   // Add the URL to the visited set
   state.visitedUrls.add(url);
   
@@ -126,7 +142,7 @@ export function addPageToState(
  * Format the final output from the state
  */
 export function formatOutput(
-  state: ScraperAgentState,
+  state: ExtendedScraperAgentState,
   startTime: number
 ): ScraperOutput {
   // Calculate execution time
@@ -157,13 +173,13 @@ export function formatOutput(
  * Add links to the state's priority queue
  */
 export function addLinksToQueue(
-  state: ScraperAgentState,
+  state: ExtendedScraperAgentState,
   links: Array<{
     url: string;
     predictedValue: number;
   }>,
   currentDepth: number
-): ScraperAgentState {
+): ExtendedScraperAgentState {
   // Filter out URLs that have already been visited
   const newLinks = links.filter(link => !state.visitedUrls.has(link.url));
   
@@ -186,7 +202,7 @@ export function addLinksToQueue(
  * Save the state to persistent storage
  */
 export async function persistState(
-  state: ScraperAgentState,
+  state: ExtendedScraperAgentState,
   storageKey: string
 ): Promise<void> {
   // In a real implementation, this would save the state to disk or a database
@@ -209,7 +225,7 @@ export async function persistState(
  */
 export async function loadState(
   storageKey: string
-): Promise<ScraperAgentState | undefined> {
+): Promise<ExtendedScraperAgentState | undefined> {
   // In a real implementation, this would load the state from disk or a database
   // For this example, we'll just return undefined
   console.log(`Would load state with key ${storageKey}`);

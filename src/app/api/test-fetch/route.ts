@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchPage } from '@/lib/agents/scraper/core/browser-interface';
+import { fetchPage } from '@/lib/agents/scraper-new/core/browser-interface';
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     // Get request body
     const body = await req.json();
-    const { url, useJavaScript = false, headers = {} } = body;
+    const { url, useJavaScript = false, headers = {}, cookies = '' } = body;
     
     if (!url) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
@@ -14,10 +14,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     console.log(`📝 [test-fetch] Testing URL fetch for: ${url}`);
     console.log(`📝 [test-fetch] Options: useJavaScript=${useJavaScript}`);
     
-    // Call fetchPage function
+    // Call fetchPage function from the new scraper implementation
     const result = await fetchPage(url, {
       executeJavaScript: useJavaScript,
       headers,
+      cookies,
       timeout: 30000
     });
     

@@ -6,7 +6,8 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import type { ScraperAgentState, HumanAuthRequest } from '../types';
+import type { ExtendedScraperAgentState } from '../state';
+import type { HumanAuthRequest } from '../types';
 
 interface AuthDetectionResult {
   requiresAuthentication: boolean;
@@ -108,7 +109,7 @@ export async function createAuthRequest(
  */
 export async function handleAuthentication(
   authRequest: HumanAuthRequest,
-  state: ScraperAgentState
+  state: ExtendedScraperAgentState
 ): Promise<boolean> {
   // In a real implementation, this would:
   // 1. Notify the user through configured channels

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { ScraperAgent } from '@/lib/agents/scraper';
-import { ScraperStreamEvent } from '@/lib/agents/scraper/types';
+import { ScraperAgent } from '@/lib/agents/scraper-new';
+import { ScraperStreamEvent } from '@/lib/agents/scraper-new/types';
 
 export const runtime = 'nodejs';
 
@@ -49,10 +49,12 @@ export async function POST(request: Request) {
         maxDepth: body.maxDepth || 3,
         includeImages: body.includeImages || false,
         executeJavaScript: body.executeJavaScript !== false, // Default to true if not specified
+        preventDuplicateUrls: true, // Enable duplicate prevention by default
         filters: {
           mustIncludePatterns: body.filters?.mustIncludePatterns || [],
           excludePatterns: body.filters?.excludePatterns || []
-        }
+        },
+        batchSize: body.batchSize || 3 // Use configurable batch size
       },
       async (event: ScraperStreamEvent) => {
         // Log the event type for debugging
