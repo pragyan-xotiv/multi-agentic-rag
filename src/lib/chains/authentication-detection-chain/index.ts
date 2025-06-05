@@ -83,11 +83,6 @@ export async function runAuthenticationDetectionChain(
   // Extract relevant HTML snippets for authentication detection
   const htmlSnippets = extractAuthRelevantHtml(input.html);
 
-  console.log(`🔍 [AuthenticationDetectionChain] HTML Snippets: ${JSON.stringify(htmlSnippets, null, 2)}`);
-  console.log(`🔍 [AuthenticationDetectionChain] Auth Result: ${JSON.stringify(authResult, null, 2)}`);
-  console.log(`🔍 [AuthenticationDetectionChain] Input: ${JSON.stringify(input, null, 2)}`);
-  console.log(`🔍 [AuthenticationDetectionChain]  parser.getFormatInstructions(): ${ parser.getFormatInstructions()}`);
-
   // Create the chain
   const chain = RunnableSequence.from([
     {
